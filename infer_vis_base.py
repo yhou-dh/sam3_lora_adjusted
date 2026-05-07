@@ -64,7 +64,7 @@ def save_book_predictions_summary(inferencer_obj, bookname, all_image_paths, out
 # Save current working directory
 original_cwd_base_full = os.getcwd()
 
-image_dir = Path(f"data/{bookname}")
+image_dir = Path(f"data/{bookname}/images")
 image_extensions = ["*.jpg", "*.jpeg", "*.png", "*.gif", "*.bmp"]
 all_image_paths = []
 for ext in image_extensions:

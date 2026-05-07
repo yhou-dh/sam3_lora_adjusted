@@ -83,7 +83,7 @@ finally:
     os.chdir(original_cwd)
 
 # Process multiple images with same prompt
-image_dir = Path(f"data/{bookname}")
+image_dir = Path(f"data/{bookname}/images")
 output_dir = Path(f"predictions/{bookname}") # Root output directory for this book
 #output_dir_s = output_dir / "single"
 output_dir_m = output_dir / "multi"
