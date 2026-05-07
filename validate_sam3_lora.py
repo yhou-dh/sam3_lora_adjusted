@@ -78,6 +78,18 @@ class COCOSegmentDataset(Dataset):
         print(f"  Images: {len(self.image_ids)}")
         print(f"  Annotations: {len(self.coco_data['annotations'])}")
         print(f"  Categories: {self.categories}")
+        # Pre-compute number of queries __getitem__ will produce per image.
+        # This mirrors the logic at lines ~189-235: one query per unique class
+        # present, or one fallback query if none.
+        self.queries_per_image = {}
+        for idx, coco_img_id in enumerate(self.image_ids):
+            annotations = self.img_to_anns.get(coco_img_id, [])
+            unique_classes = set()
+            for ann in annotations:
+                cat_id = ann.get("category_id", 0)
+                cls_name = self.categories.get(cat_id, "object")
+                unique_classes.add(cls_name.lower())
+            self.queries_per_image[idx] = max(1, len(unique_classes))
 
         self.resolution = 1008
         self.transform = v2.Compose([
@@ -121,7 +133,7 @@ class COCOSegmentDataset(Dataset):
                 continue
 
             # Get class name from category_id
-            category_id = ann.get("category_id", 0)
+            category_id = ann.get("category_id", 0) 
             class_name = self.categories.get(category_id, "object")
             object_class_names.append(class_name)
 
@@ -492,9 +504,13 @@ def create_coco_gt_from_dataset(dataset, image_ids=None, mask_resolution=288):
     }
 
     ann_id = 0
-    indices = range(len(dataset)) if image_ids is None else image_ids
+    if image_ids is None:
+        indices = list(range(len(dataset)))
+    else:
+        # Dedupe and clamp to valid dataset range to avoid IndexError
+        indices = sorted({int(i) for i in image_ids if 0 <= int(i) < len(dataset)})
 
-    for idx in tqdm(list(indices), desc="Creating GT"):
+    for idx in tqdm(indices, desc="Creating GT"):
         coco_gt['images'].append({
             'id': int(idx),
             'width': mask_resolution,
@@ -539,6 +555,10 @@ def create_coco_gt_from_dataset(dataset, image_ids=None, mask_resolution=288):
             ann_id += 1
 
     print(f"[INFO] Created {len(coco_gt['images'])} images, {len(coco_gt['annotations'])} annotations")
+
+    #patch check
+    n_with_mask = sum(1 for a in coco_gt['annotations'] if 'segmentation' in a)
+    print(f"[INFO] GT annotations with segmentation: {n_with_mask}/{len(coco_gt['annotations'])}")
 
     return coco_gt
 
@@ -916,6 +936,19 @@ def validate(config_path, weights_path, val_data_dir, num_samples=None,
                 v2.ToDtype(torch.float32, scale=True),
                 v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
             ])
+            ##patch
+            # Pre-compute number of queries __getitem__ will produce per image.
+            # Mirrors the logic in COCOSegmentDataset.__getitem__: one query per
+            # unique class present, or one fallback query if the image has none.
+            self.queries_per_image = {}
+            for idx, coco_img_id in enumerate(self.image_ids):
+                annotations = self.img_to_anns.get(coco_img_id, [])
+                unique_classes = set()
+                for ann in annotations:
+                    cat_id = ann.get("category_id", 0)
+                    cls_name = self.categories.get(cat_id, "object")
+                    unique_classes.add(cls_name.lower())
+                self.queries_per_image[idx] = max(1, len(unique_classes))
 
     val_ds = DirectCOCODataset(val_data_dir)
 
@@ -975,13 +1008,28 @@ def validate(config_path, weights_path, val_data_dir, num_samples=None,
 
                 batch_size_actual = final_outputs['pred_logits'].shape[0]
 
+                # Map each output position to its real dataset image index.
+                # The model produces one output per FindQueryLoaded; each image
+                # contributes `queries_per_image[dataset_idx]` outputs.
+                physical_bs = min(batch_size, len(val_ds) - batch_idx * batch_size)
+                output_to_image = []
+                for i in range(physical_bs):
+                    dataset_idx = batch_idx * batch_size + i
+                    n_queries = val_ds.queries_per_image[dataset_idx]
+                    output_to_image.extend([dataset_idx] * n_queries)
+
+                assert len(output_to_image) == batch_size_actual, (
+                    f"Output-to-image mapping mismatch at batch {batch_idx}: "
+                    f"expected {len(output_to_image)} outputs, got {batch_size_actual}"
+                )
+
                 for i in range(batch_size_actual):
-                    img_id = batch_idx * batch_size + i
+                    img_id = output_to_image[i]
                     all_image_ids.append(img_id)
                     all_predictions.append({
                         'pred_logits': final_outputs['pred_logits'][i].detach().cpu(),
-                        'pred_boxes': final_outputs['pred_boxes'][i].detach().cpu(),
-                        'pred_masks': final_outputs['pred_masks'][i].detach().cpu()
+                        'pred_boxes':  final_outputs['pred_boxes'][i].detach().cpu(),
+                        'pred_masks':  final_outputs['pred_masks'][i].detach().cpu()
                     })
 
     print(f"\nCollected predictions for {len(all_predictions)} images")
@@ -1050,17 +1098,22 @@ def validate(config_path, weights_path, val_data_dir, num_samples=None,
             with contextlib.redirect_stdout(devnull):
                 coco_gt = COCO(str(gt_file))
                 coco_dt = coco_gt.loadRes(str(pred_file))
-                coco_eval = COCOeval(coco_gt, coco_dt, 'segm')
-                coco_eval.params.useCats = False
+                #coco_eval = COCOeval(coco_gt, coco_dt, 'segm')
+                coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
+                coco_eval.params.useCats = True #default: False
                 coco_eval.evaluate()
                 coco_eval.accumulate()
 
         # Print mAP results
         coco_eval.summarize()
 
-        map_segm = coco_eval.stats[0]
-        map50_segm = coco_eval.stats[1]
-        map75_segm = coco_eval.stats[2]
+        #map_segm = coco_eval.stats[0]
+        #map50_segm = coco_eval.stats[1]
+        #map75_segm = coco_eval.stats[2]
+
+        map_bbox = coco_eval.stats[0]
+        map50_bbox = coco_eval.stats[1]
+        map75_bbox = coco_eval.stats[2]
 
         # Compute cgF1
         print("\n" + "="*80)
@@ -1069,25 +1122,31 @@ def validate(config_path, weights_path, val_data_dir, num_samples=None,
 
         cgf1_evaluator = CGF1Evaluator(
             gt_path=str(gt_file),
-            iou_type='segm',
+            #iou_type='segm',
+            iou_type='bbox',
             verbose=True
         )
         cgf1_results = cgf1_evaluator.evaluate(str(pred_file))
+        #patchdebug
+        #print(f"[DEBUG] cgf1_results keys: {list(cgf1_results.keys())}")
 
-        cgf1 = cgf1_results.get('cgF1_eval_segm_cgF1', 0.0)
-        cgf1_50 = cgf1_results.get('cgF1_eval_segm_cgF1@0.5', 0.0)
-        cgf1_75 = cgf1_results.get('cgF1_eval_segm_cgF1@0.75', 0.0)
+        #cgf1 = cgf1_results.get('cgF1_eval_segm_cgF1', 0.0)
+        #cgf1_50 = cgf1_results.get('cgF1_eval_segm_cgF1@0.5', 0.0)
+        #cgf1_75 = cgf1_results.get('cgF1_eval_segm_cgF1@0.75', 0.0)
+        cgf1 = cgf1_results.get('cgF1_eval_bbox_F1', 0.0) #cgF1 -> F1 for bbox
+        cgf1_50 = cgf1_results.get('cgF1_eval_bbox_F1@0.5', 0.0)
+        cgf1_75 = cgf1_results.get('cgF1_eval_bbox_F1@0.75', 0.0)
 
         # Print summary
         print("\n" + "="*80)
         print("FINAL RESULTS")
         print("="*80)
-        print(f"mAP (IoU 0.50:0.95): {map_segm:.4f}")
-        print(f"mAP@50: {map50_segm:.4f}")
-        print(f"mAP@75: {map75_segm:.4f}")
-        print(f"cgF1 (IoU 0.50:0.95): {cgf1:.4f}")
-        print(f"cgF1@50: {cgf1_50:.4f}")
-        print(f"cgF1@75: {cgf1_75:.4f}")
+        print(f"mAP (IoU 0.50:0.95): {map_bbox:.4f}")
+        print(f"mAP@50: {map50_bbox:.4f}")
+        print(f"mAP@75: {map75_bbox:.4f}")
+        print(f"F1 (IoU 0.50:0.95): {cgf1:.4f}") #cgF1 -> F1 for bbox
+        print(f"F1@50: {cgf1_50:.4f}")
+        print(f"F1@75: {cgf1_75:.4f}")
         print("="*80)
 
         # Cleanup temporary files
