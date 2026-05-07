@@ -82,6 +82,7 @@ try:
     os.chdir('/home/yumeng.hou/sam3_lora_adjusted')
     base_inferencer_full = SAM3LoRAInference(
         config_path="configs/base_config.yaml",
+        weights_path='base',
         detection_threshold=0.8,
         nms_iou_threshold=0.15
     )
