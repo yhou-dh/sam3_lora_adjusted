@@ -7,6 +7,13 @@ from pathlib import Path
 
 bookname = "test"
 
+BASE_DIR = Path('/home/yumeng.hou/sam3_lora_adjusted')  # ADD HERE
+
+# then change these lines:
+image_dir = BASE_DIR / f"data/{bookname}/images"
+base_all_output_dir = BASE_DIR / f"predictions/base/{bookname}"
+
+
 if '/home/yumeng.hou/sam3_lora_adjusted' not in sys.path:
     sys.path.insert(0, '/home/yumeng.hou/sam3_lora_adjusted')
 
@@ -118,4 +125,4 @@ print(f"\nBase model inference for all images complete. Visualizations saved to 
 
 
 # Call the new function to save the book predictions summary
-save_book_predictions_summary(base_inferencer_full, bookname, all_image_paths, Path("predictions/base"))
+save_book_predictions_summary(base_inferencer_full, bookname, all_image_paths, BASE_DIR / "predictions/base")

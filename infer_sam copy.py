@@ -90,11 +90,7 @@ class SAM3LoRAInference:
             weights_path = os.path.join(output_dir, 'best_lora_weights.pt')
             print(f"ℹ️  Auto-detected weights: {weights_path}")
 
-        #if not os.path.exists(weights_path):
-        #    raise FileNotFoundError(f"LoRA weights not found: {weights_path}")
-        # Line 93-94, change to:
-
-        if weights_path != 'base' and not os.path.exists(weights_path):
+        if not os.path.exists(weights_path):
             raise FileNotFoundError(f"LoRA weights not found: {weights_path}")
 
         self.weights_path = weights_path
@@ -137,14 +133,8 @@ class SAM3LoRAInference:
         self.model = apply_lora_to_model(self.model, lora_config)
 
         # Load LoRA weights
-        #print(f"💾 Loading LoRA weights from {weights_path}...")
-        #load_lora_weights(self.model, weights_path)
-
-        if weights_path != 'base':
-            print(f"💾 Loading LoRA weights from {weights_path}...")
-            load_lora_weights(self.model, weights_path)
-        else:
-            print("ℹ️  Running base SAM3 model without LoRA weights")
+        print(f"💾 Loading LoRA weights from {weights_path}...")
+        load_lora_weights(self.model, weights_path)
 
         self.model.to(self.device)
         self.model.eval()

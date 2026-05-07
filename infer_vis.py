@@ -6,6 +6,9 @@ import json
 import numpy as np
 
 bookname = "test"
+BASE_DIR = Path('/home/yumeng.hou/sam3_lora_adjusted')
+image_dir = BASE_DIR / f"data/{bookname}/images"
+output_dir = BASE_DIR / f"predictions/{bookname}"
 
 # Add the sam3_lora directory to the Python path if not already present
 if '/home/yumeng.hou/sam3_lora_adjusted' not in sys.path:
@@ -139,4 +142,4 @@ for img_path in all_image_paths:
         print(f"  Warning: Predictions for {img_path.name} is not a dictionary. Cannot print detailed summary.")
 
 # Call the new function to save the book predictions summary
-save_book_predictions_summary(inferencer, bookname, all_image_paths, Path("predictions"))
+save_book_predictions_summary(inferencer, bookname, all_image_paths, BASE_DIR / "predictions")
