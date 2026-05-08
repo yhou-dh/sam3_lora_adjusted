@@ -262,7 +262,8 @@ watch -n 10 "find ~/sam3_lora_adjusted/predictions/ -name '*.png' | wc -l"
 ```
 
 ---
-Batch inference:
+
+### 6.1 Batch inference:
 ```bash
 cat > infer_lora2.sh << 'EOF'
 #!/bin/bash
@@ -283,6 +284,53 @@ EOF
 
 sbatch infer_lora2.sh
 ```
+
+
+### 6.2 Batch inference with mask:
+
+
+cat > infer_vmask.sh << 'EOF'
+#!/bin/bash
+#SBATCH --job-name=infer_vmask
+#SBATCH --partition=voltagepark
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=64G
+#SBATCH --time=1:00:00
+#SBATCH --output=infer_vmask_%j.out
+
+cd ~/sam3_lora_adjusted
+python3.10 infer_vmask.py
+EOF
+
+sbatch infer_vmask.sh
+
+
+### 6.3 Segment by mask
+
+cat > extract.sh << 'EOF'
+#!/bin/bash
+#SBATCH --job-name=extract_fg
+#SBATCH --partition=voltagepark
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --time=2:00:00
+#SBATCH --output=extract_%j.out
+
+cd ~/sam3_lora_adjusted
+
+python3.10 extract_foreground.py \
+    --predictions_root predictions/lora_masks \
+    --image_root finerbook \
+    --padding 10 \
+    --min_score 0.9
+EOF
+
+sbatch extract.sh
 
 ---
 

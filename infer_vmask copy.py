@@ -99,12 +99,6 @@ for bookname in booknames:
     print(f"Processing book: {bookname}")
     print(f"{'='*50}")
 
-    # Skip if already processed
-    summary_path = BASE_DIR / "predictions" / "lora" / bookname / "summaries" / "book_predictions.json"
-    if summary_path.exists():
-        print(f"  ✓ Skipping {bookname} (already done)")
-        continue
-
     image_dir  = BOOK_DIR / bookname
     output_dir = BASE_DIR / "predictions" / "lora" / bookname
 
