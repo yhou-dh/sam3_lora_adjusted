@@ -135,9 +135,13 @@ def evaluate(pred_path: str, ann_path: str, model_name: str):
         coco_eval_cat.params.catIds = [cat_id]
         coco_eval_cat.evaluate()
         coco_eval_cat.accumulate()
-        ap = coco_eval_cat.stats[0]  # mAP@50:95
-        ap50 = coco_eval_cat.stats[1]  # mAP@50
         name = id_to_name[cat_id]
+        if len(coco_eval_cat.stats) > 1:
+            ap   = coco_eval_cat.stats[0]
+            ap50 = coco_eval_cat.stats[1]
+        else:
+            ap   = -1.0
+            ap50 = -1.0
         per_class[name] = {"AP@50:95": round(float(ap), 4),
                            "AP@50":    round(float(ap50), 4)}
         print(f"  {name:<20} AP@50:95={ap:.4f}  AP@50={ap50:.4f}")
