@@ -63,7 +63,9 @@ def extract_foreground(img_array: np.ndarray, mask: np.ndarray) -> Image.Image:
     return Image.fromarray(cropped, 'RGBA')
 
 
-KEEP_CLASSES = {"human", "illustration", "polearm"}
+KEEP_CLASSES = {"0", "1", "2"}  # 0=human, 1=illustration, 2=polearm
+CLASS_NAMES  = {"0": "human", "1": "illustration", "2": "polearm"}
+CLASS_ABBR   = {"0": "hm",    "1": "il",           "2": "ar"}
 
 
 def process_book(pred_path: Path, image_dir: Path, output_dir: Path,
@@ -122,11 +124,11 @@ def process_book(pred_path: Path, image_dir: Path, output_dir: Path,
                     continue
 
                 # Save into class subfolder
-                class_dir = output_dir / str(prompt)
+                class_dir = output_dir / CLASS_NAMES.get(str(prompt), str(prompt))
                 class_dir.mkdir(parents=True, exist_ok=True)
                 stem       = Path(fname).stem
                 clean_stem = stem.split('__')[-1] if '__' in stem else stem
-                class_abbr = {"human": "hm", "illustration": "il", "polearm": "ar"}.get(str(prompt), str(prompt))
+                class_abbr = CLASS_ABBR.get(str(prompt), str(prompt))
                 out_fname  = f"{clean_stem}_{class_abbr}_{i+1}.png"
                 result.save(str(class_dir / out_fname))
                 total_saved += 1
