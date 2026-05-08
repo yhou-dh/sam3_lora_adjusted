@@ -84,7 +84,7 @@ try:
 finally:
     os.chdir(original_cwd_base_full)
 
-image_dir = Path(f"data/{bookname}/images")
+#image_dir = Path(f"data/{bookname}/images")
 
 # Clean up existing output directory if it exists
 if base_all_output_dir.exists():
@@ -101,7 +101,7 @@ for ext in image_extensions:
 
 
 # Define output directory for base model predictions for all images
-base_all_output_dir = Path(f"predictions/base/{bookname}")
+#base_all_output_dir = Path(f"predictions/base/{bookname}")
 
 print(f"\nRunning base model inference on all {len(all_image_paths)} images...")
 
