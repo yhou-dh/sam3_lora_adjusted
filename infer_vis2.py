@@ -76,7 +76,7 @@ for bookname in booknames:
     print(f"Processing book: {bookname}")
     print(f"{'='*50}")
 
-    image_dir  = BOOK_DIR / bookname / "images"
+    image_dir  = BOOK_DIR / bookname 
     output_dir = BASE_DIR / "predictions" / "lora" / bookname
 
     if not image_dir.exists():
