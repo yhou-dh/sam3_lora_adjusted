@@ -63,6 +63,9 @@ def extract_foreground(img_array: np.ndarray, mask: np.ndarray) -> Image.Image:
     return Image.fromarray(cropped, 'RGBA')
 
 
+KEEP_CLASSES = {"human", "illustration", "polearm"}
+
+
 def process_book(pred_path: Path, image_dir: Path, output_dir: Path,
                  padding: int, min_score: float, min_detections: int):
 
@@ -98,6 +101,10 @@ def process_book(pred_path: Path, image_dir: Path, output_dir: Path,
             if num_detections < min_detections:
                 continue
 
+            # Skip classes we don't need
+            if str(prompt) not in KEEP_CLASSES:
+                continue
+
             if not masks_rle:
                 continue
 
@@ -114,10 +121,12 @@ def process_book(pred_path: Path, image_dir: Path, output_dir: Path,
                 if result is None:
                     continue
 
-                # Save as PNG with transparency
+                # Save into class subfolder
+                class_dir = output_dir / str(prompt)
+                class_dir.mkdir(parents=True, exist_ok=True)
                 stem      = Path(fname).stem
-                out_fname = f"{stem}_{prompt}_{i}_score{score:.2f}.png"
-                result.save(str(output_dir / out_fname))
+                out_fname = f"{stem}_{i}_score{score:.2f}.png"
+                result.save(str(class_dir / out_fname))
                 total_saved += 1
 
     print(f"  ✅ Saved {total_saved} crops, skipped {total_skipped} images")
