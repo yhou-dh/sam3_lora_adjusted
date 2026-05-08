@@ -1,14 +1,15 @@
 import os
-import shutil # Import shutil for directory operations
-import sys # Import sys for path manipulation
+import shutil 
+import sys
 from pathlib import Path
 import json
 import numpy as np
 
 bookname = "test"
+
 BASE_DIR = Path('/home/yumeng.hou/sam3_lora_adjusted')
 image_dir = BASE_DIR / f"data/{bookname}/images"
-output_dir = BASE_DIR / f"predictions/{bookname}"
+output_dir = BASE_DIR / f"predictions/lora/{bookname}"
 
 # Add the sam3_lora directory to the Python path if not already present
 if '/home/yumeng.hou/sam3_lora_adjusted' not in sys.path:
@@ -25,7 +26,7 @@ def save_book_predictions_summary(inferencer_obj, bookname, all_image_paths, out
     print(f"\nExtracting and saving predictions for book: {bookname}...")
 
     # Define prompts for the summary. Using the multi-prompt set from the cell.
-    current_prompts_for_summary = ["human", "illustration", "polearm", "sword", "crossbow", "formation"]
+    current_prompts_for_summary = ["human", "illustration", "polearm"]
 
     for img_path in all_image_paths:
         image_data = {
@@ -43,11 +44,13 @@ def save_book_predictions_summary(inferencer_obj, bookname, all_image_paths, out
                 if isinstance(result_dict, dict) and 'boxes' in result_dict and 'scores' in result_dict:
                     # Convert numpy arrays to lists for JSON serialization
                     boxes_list = result_dict['boxes'].tolist() if result_dict['boxes'] is not None else []
+                    mask_list = result_dict['masks'].tolist() if result_dict['masks'] is not None else []
                     scores_list = result_dict['scores'].tolist() if result_dict['scores'] is not None else []
 
                     image_data["detections"].append({
                         "prompt": prompt,
                         "boxes": boxes_list,
+                        "masks": mask_list,
                         "scores": scores_list,
                         "num_detections": result_dict.get('num_detections', len(boxes_list)) if result_dict['boxes'] is not None else 0
                     })
@@ -105,27 +108,12 @@ all_image_paths = []
 for ext in image_extensions:
     all_image_paths.extend(image_dir.glob(ext))
 
-# Process with single prompt
-# for img_path in all_image_paths:
-#     predictions = inferencer.predict(
-#         str(img_path),
-#         text_prompts=["illustration"]
-#     )
-
-#     output_path = output_dir_s / f"{img_path.stem}_pred.png"
-#     inferencer.visualize(
-#         predictions,
-#         str(output_path)
-#     )
-
-#     print(f"✓ Processed {img_path.name}")
-
 # Process with multiple prompts per image
 for img_path in all_image_paths:
     # Detect multiple object types at once
     predictions = inferencer.predict(
         str(img_path),
-        text_prompts=["human", "illustration", "polearm", "sword", "crossbow", "formation"]
+        text_prompts=["human", "illustration", "polearm"]
     )
 
     output_path = output_dir_m / f"{img_path.stem}_multi.png"
@@ -141,4 +129,4 @@ for img_path in all_image_paths:
         print(f"  Warning: Predictions for {img_path.name} is not a dictionary. Cannot print detailed summary.")
 
 # Call the new function to save the book predictions summary
-save_book_predictions_summary(inferencer, bookname, all_image_paths, BASE_DIR / "predictions")
+save_book_predictions_summary(inferencer, bookname, all_image_paths, BASE_DIR / "predictions/lora")
