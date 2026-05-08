@@ -100,7 +100,7 @@ if output_dir.exists():
 
 # Create all necessary directories, including subdirectories
 #output_dir_s.mkdir(parents=True, exist_ok=True)
-output_dir_m.mkdir(parents=True, exist_ok=True)
+output_dir.mkdir(parents=True, exist_ok=True)
 
 # List of common image extensions to detect
 image_extensions = ["*.jpg", "*.jpeg", "*.png", "*.gif", "*.bmp"]
@@ -116,7 +116,7 @@ for img_path in all_image_paths:
         text_prompts=["human", "illustration", "polearm"]
     )
 
-    output_path = output_dir_m / f"{img_path.stem}_multi.png"
+    output_path = output_dir / f"{img_path.stem}_multi.png"
     inferencer.visualize(predictions, str(output_path))
 
     # Print summary
