@@ -44,13 +44,11 @@ def save_book_predictions_summary(inferencer_obj, bookname, all_image_paths, out
                 if isinstance(result_dict, dict) and 'boxes' in result_dict and 'scores' in result_dict:
                     # Convert numpy arrays to lists for JSON serialization
                     boxes_list = result_dict['boxes'].tolist() if result_dict['boxes'] is not None else []
-                    mask_list = result_dict['masks'].tolist() if result_dict['masks'] is not None else []
                     scores_list = result_dict['scores'].tolist() if result_dict['scores'] is not None else []
 
                     image_data["detections"].append({
                         "prompt": prompt,
                         "boxes": boxes_list,
-                        "masks": mask_list,
                         "scores": scores_list,
                         "num_detections": result_dict.get('num_detections', len(boxes_list)) if result_dict['boxes'] is not None else 0
                     })
