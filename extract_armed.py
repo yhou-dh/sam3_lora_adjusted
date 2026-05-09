@@ -7,10 +7,10 @@ Logic:
   For each image:
     For each human detection:
       Check if human mask overlaps with any polearm mask
-      → armed: save to armed_human/
-      → unarmed: save to unarmed_human/
+      → armed: save to human_armed/
+      → unarmed: save to human_unarmed/
     For each illustration detection:
-      Save bbox crop to illustration/
+      Save bbox crop to illustration_bbox/
 
 Usage:
     python3.10 extract_armed.py \
@@ -19,7 +19,7 @@ Usage:
         --output_root predictions/armed \
         --padding 10 \
         --min_score 0.8 \
-        --overlap_dilation 20
+        --overlap_dilation 40
 
     # Single book test:
     python3.10 extract_armed.py \
@@ -38,7 +38,7 @@ from PIL import Image
 from pycocotools import mask as mask_utils
 
 # Prompt index mapping
-IDX_TO_CLASS = {0: "human", 1: "illustration_bbox", 2: "polearm"}
+IDX_TO_CLASS = {0: "human", 1: "illustration", 2: "polearm"}
 
 
 def decode_rle(rle: dict) -> np.ndarray:
@@ -100,8 +100,8 @@ def process_book(pred_path: Path, image_dir: Path, output_root: Path,
     unarmed_dir.mkdir(parents=True, exist_ok=True)
     illus_dir.mkdir(parents=True, exist_ok=True)
 
-    #stats = {"armed": 0, "unarmed": 0, "illustration_bbox": 0, "skipped": 0}
-    stats = {"human_armed": 0, "human_unarmed": 0, "illustration_bbox": 0, "skipped": 0}
+    stats = {"armed": 0, "unarmed": 0, "illustration": 0, "skipped": 0}
+    #stats = {"human_armed": 0, "human_unarmed": 0, "illustration_bbox": 0, "skipped": 0}
 
     for item in predictions:
         fname    = item["file_name"]
@@ -134,7 +134,7 @@ def process_book(pred_path: Path, image_dir: Path, output_root: Path,
                     humans.append(entry)
                 elif cls == "polearm":
                     polearms.append(entry)
-                elif cls == "illustration_bbox":
+                elif cls == "illustration":
                     illustrations.append(entry)
 
         # Save illustration bbox crops
@@ -142,7 +142,7 @@ def process_book(pred_path: Path, image_dir: Path, output_root: Path,
             result = bbox_crop(img_array, box, padding)
             if result:
                 result.save(str(illus_dir / f"{stem}_il_{i+1}.jpg"))
-                stats["illustration_bbox"] += 1
+                stats["illustration"] += 1
 
         # Match humans to polearms via mask overlap
         for i, (h_mask, h_score, h_box, h_idx) in enumerate(humans):
@@ -203,7 +203,7 @@ def process_all(predictions_root: str, image_root: str, output_root: str,
     print(f"  Overlap dilation : {overlap_dilation}px")
     print(f"{'='*60}")
 
-    grand = {"armed": 0, "unarmed": 0, "illustration_bbox": 0, "skipped": 0}
+    grand = {"armed": 0, "unarmed": 0, "illustration": 0, "skipped": 0}
 
     for book_dir in book_folders:
         bookname  = book_dir.name
