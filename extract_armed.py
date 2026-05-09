@@ -145,19 +145,27 @@ def process_book(pred_path: Path, image_dir: Path, output_root: Path,
 
         # Match humans to polearms via mask overlap
         for i, (h_mask, h_score, h_box, h_idx) in enumerate(humans):
-            is_armed = any(
-                masks_overlap(h_mask, p_mask, dilation=overlap_dilation)
-                for (p_mask, _, _, _) in polearms
-            )
-
-            result = crop_rgba(img_array, h_mask, padding)
-            if result is None:
-                continue
+            overlapping_polearms = [
+                p_mask for (p_mask, _, _, _) in polearms
+                if masks_overlap(h_mask, p_mask, dilation=overlap_dilation)
+            ]
+            is_armed = len(overlapping_polearms) > 0
 
             if is_armed:
+                # Combine human mask with all overlapping polearm masks
+                combined_mask = h_mask.copy()
+                for p_mask in overlapping_polearms:
+                    combined_mask = np.maximum(combined_mask, p_mask)
+
+                result = crop_rgba(img_array, combined_mask, padding)
+                if result is None:
+                    continue
                 result.save(str(armed_dir / f"{stem}_hm_armed_{i+1}.png"))
                 stats["armed"] += 1
             else:
+                result = crop_rgba(img_array, h_mask, padding)
+                if result is None:
+                    continue
                 result.save(str(unarmed_dir / f"{stem}_hm_unarmed_{i+1}.png"))
                 stats["unarmed"] += 1
 
