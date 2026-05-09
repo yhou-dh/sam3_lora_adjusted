@@ -159,17 +159,36 @@ def process_book(pred_path: Path, image_dir: Path, output_root: Path,
                 result.save(str(illus_dir / f"{stem}_il_{i+1}.jpg"))
                 stats["illustration"] += 1
 
+        def box_center(box):
+            return ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+
+        def box_distance(box1, box2):
+            c1 = box_center(box1)
+            c2 = box_center(box2)
+            return ((c1[0]-c2[0])**2 + (c1[1]-c2[1])**2) ** 0.5
+
+        # Assign each polearm to its nearest human only
+        polearm_assignments = {}  # polearm index -> nearest human index
+        for pi, (p_mask, _, p_box, _) in enumerate(polearms):
+            nearest_human = None
+            nearest_dist  = float('inf')
+            for hi, (h_mask, _, h_box, _) in enumerate(humans):
+                if masks_overlap(h_mask, p_mask, dilation=overlap_dilation) or boxes_near(h_box, p_box, margin=box_margin):
+                    dist = box_distance(h_box, p_box)
+                    if dist < nearest_dist:
+                        nearest_dist  = dist
+                        nearest_human = hi
+            if nearest_human is not None:
+                polearm_assignments.setdefault(nearest_human, []).append(pi)
+
         # Match humans to polearms via mask overlap OR bbox proximity
         for i, (h_mask, h_score, h_box, h_idx) in enumerate(humans):
-            overlapping_polearms = [
-                (p_mask, p_box) for (p_mask, _, p_box, _) in polearms
-                if masks_overlap(h_mask, p_mask, dilation=overlap_dilation)
-                or boxes_near(h_box, p_box, margin=box_margin)
-            ]
+            assigned = polearm_assignments.get(i, [])
+            overlapping_polearms = [(polearms[pi][0], polearms[pi][2]) for pi in assigned]
             is_armed = len(overlapping_polearms) > 0
 
             if is_armed:
-                # Combine human mask with all overlapping polearm masks
+                # Combine human mask with assigned polearm masks only
                 combined_mask = h_mask.copy()
                 for p_mask, _ in overlapping_polearms:
                     combined_mask = np.maximum(combined_mask, p_mask)
