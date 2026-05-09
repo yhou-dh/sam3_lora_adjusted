@@ -41,6 +41,8 @@ from pycocotools import mask as mask_utils
 # Prompt index mapping
 IDX_TO_CLASS = {0: "human", 1: "illustration", 2: "polearm"}
 
+POLEARM_MIN_SCORE = 0.85  # lower threshold for polearms
+
 
 def decode_rle(rle: dict) -> np.ndarray:
     return mask_utils.decode(rle).astype(np.uint8)
@@ -138,7 +140,8 @@ def process_book(pred_path: Path, image_dir: Path, output_root: Path,
             masks_rle = det.get("masks_rle", [])
 
             for i, (rle, score, box) in enumerate(zip(masks_rle, scores, boxes)):
-                if score < min_score:
+                threshold = POLEARM_MIN_SCORE if cls == "polearm" else min_score
+                if score < threshold:
                     continue
                 mask  = decode_rle(rle)
                 entry = (mask, score, box, i)
