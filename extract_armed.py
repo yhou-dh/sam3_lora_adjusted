@@ -100,7 +100,8 @@ def process_book(pred_path: Path, image_dir: Path, output_root: Path,
     unarmed_dir.mkdir(parents=True, exist_ok=True)
     illus_dir.mkdir(parents=True, exist_ok=True)
 
-    stats = {"armed": 0, "unarmed": 0, "illustration_bbox": 0, "skipped": 0}
+    #stats = {"armed": 0, "unarmed": 0, "illustration_bbox": 0, "skipped": 0}
+    stats = {"human_armed": 0, "human_unarmed": 0, "illustration_bbox": 0, "skipped": 0}
 
     for item in predictions:
         fname    = item["file_name"]
