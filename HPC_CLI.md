@@ -85,7 +85,7 @@ cat > train.sh << 'EOF'
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --time=7:00:00
+#SBATCH --time=12:00:00
 #SBATCH --output=train_%j.out
 
 export HF_TOKEN="hf_token"
@@ -111,7 +111,7 @@ cat > validate.sh << 'EOF'
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=128G
-#SBATCH --time=1:00:00
+#SBATCH --time=2:00:00
 #SBATCH --output=validate_%j.out
 
 export HF_TOKEN="hf_token"
@@ -132,7 +132,7 @@ cat > validate_test.sh << 'EOF'
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=128G
-#SBATCH --time=1:00:00
+#SBATCH --time=2:00:00
 #SBATCH --output=validate_test_%j.out
 
 export HF_TOKEN="hf_token"
@@ -153,7 +153,7 @@ cat > validate_base_valid.sh << 'EOF'
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=128G
-#SBATCH --time=1:00:00
+#SBATCH --time=2:00:00
 #SBATCH --output=validate_base_valid_%j.out
 
 export HF_TOKEN="hf_token"
@@ -173,7 +173,7 @@ cat > validate_base_test.sh << 'EOF'
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=128G
-#SBATCH --time=1:00:00
+#SBATCH --time=2:00:00
 #SBATCH --output=validate_base_test_%j.out
 
 export HF_TOKEN="hf_token"
@@ -204,7 +204,7 @@ cat > infer_lora.sh << 'EOF'
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
-#SBATCH --time=2:00:00
+#SBATCH --time=4:00:00
 #SBATCH --output=infer_lora_%j.out
 
 export HF_TOKEN="hf_token"
@@ -222,7 +222,7 @@ cat > infer_base.sh << 'EOF'
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
-#SBATCH --time=2:00:00
+#SBATCH --time=4:00:00
 #SBATCH --output=infer_base_%j.out
 
 export HF_TOKEN="hf_token"
@@ -298,7 +298,7 @@ cat > infer_vmask.sh << 'EOF'
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
-#SBATCH --time=1:00:00
+#SBATCH --time=4:00:00
 #SBATCH --output=infer_vmask_%j.out
 
 cd ~/sam3_lora_adjusted
@@ -317,14 +317,14 @@ cat > extract.sh << 'EOF'
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 #SBATCH --time=2:00:00
 #SBATCH --output=extract_%j.out
 
 cd ~/sam3_lora_adjusted
 
 python3.10 extract_foreground.py \
-    --predictions_root predictions/lora_masks \
+    --predictions_root predictions/lora \
     --image_root finerbook \
     --padding 10 \
     --min_score 0.9
