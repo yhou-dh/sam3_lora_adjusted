@@ -38,7 +38,7 @@ from PIL import Image
 from pycocotools import mask as mask_utils
 
 # Prompt index mapping
-IDX_TO_CLASS = {0: "human", 1: "illustration", 2: "polearm"}
+IDX_TO_CLASS = {0: "human", 1: "illustration_bbox", 2: "polearm"}
 
 
 def decode_rle(rle: dict) -> np.ndarray:
@@ -93,14 +93,14 @@ def process_book(pred_path: Path, image_dir: Path, output_root: Path,
     bookname = pred_path.parent.parent.name
 
     # Output directories
-    armed_dir   = output_root / bookname / "armed_human"
-    unarmed_dir = output_root / bookname / "unarmed_human"
-    illus_dir   = output_root / bookname / "illustration"
+    armed_dir   = output_root / bookname / "human_armed"
+    unarmed_dir = output_root / bookname / "human_unarmed"
+    illus_dir   = output_root / bookname / "illustration_bbox"
     armed_dir.mkdir(parents=True, exist_ok=True)
     unarmed_dir.mkdir(parents=True, exist_ok=True)
     illus_dir.mkdir(parents=True, exist_ok=True)
 
-    stats = {"armed": 0, "unarmed": 0, "illustration": 0, "skipped": 0}
+    stats = {"armed": 0, "unarmed": 0, "illustration_bbox": 0, "skipped": 0}
 
     for item in predictions:
         fname    = item["file_name"]
@@ -133,7 +133,7 @@ def process_book(pred_path: Path, image_dir: Path, output_root: Path,
                     humans.append(entry)
                 elif cls == "polearm":
                     polearms.append(entry)
-                elif cls == "illustration":
+                elif cls == "illustration_bbox":
                     illustrations.append(entry)
 
         # Save illustration bbox crops
@@ -141,7 +141,7 @@ def process_book(pred_path: Path, image_dir: Path, output_root: Path,
             result = bbox_crop(img_array, box, padding)
             if result:
                 result.save(str(illus_dir / f"{stem}_il_{i+1}.jpg"))
-                stats["illustration"] += 1
+                stats["illustration_bbox"] += 1
 
         # Match humans to polearms via mask overlap
         for i, (h_mask, h_score, h_box, h_idx) in enumerate(humans):
@@ -202,7 +202,7 @@ def process_all(predictions_root: str, image_root: str, output_root: str,
     print(f"  Overlap dilation : {overlap_dilation}px")
     print(f"{'='*60}")
 
-    grand = {"armed": 0, "unarmed": 0, "illustration": 0, "skipped": 0}
+    grand = {"armed": 0, "unarmed": 0, "illustration_bbox": 0, "skipped": 0}
 
     for book_dir in book_folders:
         bookname  = book_dir.name
