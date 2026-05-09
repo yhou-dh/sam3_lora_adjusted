@@ -1,33 +1,38 @@
 """
-extract_armed.py
-Extracts armed humans by detecting overlap between human and polearm masks
-within illustration context.
+extract_armed_bw.py
+Extracts armed humans using illustration bbox as context boundary.
 
 Logic:
-  For each image:
-    For each human detection:
-      Check if human mask overlaps OR bbox is near any polearm
-      → armed: save to human_armed/
-      → unarmed: save to human_unarmed/
-    For each illustration detection:
-      Save bbox crop to illustration_bbox/
+  For each illustration detection:
+    Find all human and polearm masks whose center falls inside the illustration bbox
+    
+    If 1 human + 1-2 polearms:
+      → combine all masks → save as human_armed
+    
+    If 2+ humans + polearms:
+      → assign each polearm to nearest human by center distance
+      → save each human+assigned polearms as human_armed
+    
+    If human only (no polearm inside illustration):
+      → save human mask as human_unarmed
+    
+    Always save illustration bbox crop to illustration_bbox/
 
 Usage:
-    python3.10 extract_armed.py \
+    python3.10 extract_armed_bw.py \
         --predictions_root predictions/lora \
         --image_root finerbook \
-        --output_root predictions/armed \
+        --output_root predictions/armed_bw \
         --padding 10 \
-        --min_score 0.8 \
-        --overlap_dilation 40 \
-        --box_margin 50
+        --min_score 0.9 \
+        --polearm_min_score 0.85
 
     # Single book test:
-    python3.10 extract_armed.py \
+    python3.10 extract_armed_bw.py \
         --predictions_root predictions/lora \
         --image_root finerbook \
-        --output_root predictions/armed \
-        --book bdj_qm
+        --output_root predictions/armed_bw \
+        --book zggyjf
 """
 
 import json
@@ -38,10 +43,9 @@ from pathlib import Path
 from PIL import Image
 from pycocotools import mask as mask_utils
 
-# Prompt index mapping
 IDX_TO_CLASS = {0: "human", 1: "illustration", 2: "polearm"}
 
-POLEARM_MIN_SCORE = 0.85  # lower threshold for polearms
+MAX_ASSIGN_DISTANCE = 200  # pixels — max distance to assign polearm to human
 
 
 def decode_rle(rle: dict) -> np.ndarray:
@@ -53,21 +57,21 @@ def dilate_mask(mask: np.ndarray, pixels: int) -> np.ndarray:
     return cv2.dilate(mask, kernel, iterations=1)
 
 
-def masks_overlap(mask1: np.ndarray, mask2: np.ndarray, dilation: int = 20) -> bool:
-    """Check if two masks overlap or are within `dilation` pixels of each other."""
-    dilated1 = dilate_mask(mask1, dilation)
-    return bool(np.any(dilated1 & mask2))
+def box_center(box: list) -> tuple:
+    return ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
 
 
-def boxes_near(box1: list, box2: list, margin: int = 50) -> bool:
-    """Check if two bounding boxes are close or overlapping within margin pixels."""
-    x1_1, y1_1, x2_1, y2_1 = box1
-    x1_2, y1_2, x2_2, y2_2 = box2
-    x1_1 -= margin
-    y1_1 -= margin
-    x2_1 += margin
-    y2_1 += margin
-    return not (x2_1 < x1_2 or x2_2 < x1_1 or y2_1 < y1_2 or y2_2 < y1_1)
+def center_in_box(center: tuple, box: list) -> bool:
+    """Check if a center point falls inside a bounding box."""
+    cx, cy = center
+    x1, y1, x2, y2 = box
+    return x1 <= cx <= x2 and y1 <= cy <= y2
+
+
+def box_distance(box1: list, box2: list) -> float:
+    c1 = box_center(box1)
+    c2 = box_center(box2)
+    return ((c1[0]-c2[0])**2 + (c1[1]-c2[1])**2) ** 0.5
 
 
 def crop_rgba(img_array: np.ndarray, mask: np.ndarray, padding: int) -> Image.Image:
@@ -99,15 +103,13 @@ def bbox_crop(img_array: np.ndarray, box: list, padding: int = 10) -> Image.Imag
 
 
 def process_book(pred_path: Path, image_dir: Path, output_root: Path,
-                 padding: int, min_score: float, overlap_dilation: int,
-                 box_margin: int):
+                 padding: int, min_score: float, polearm_min_score: float):
 
     with open(pred_path) as f:
         predictions = json.load(f)
 
     bookname = pred_path.parent.parent.name
 
-    # Output directories
     armed_dir   = output_root / bookname / "human_armed"
     unarmed_dir = output_root / bookname / "human_unarmed"
     illus_dir   = output_root / bookname / "illustration_bbox"
@@ -128,10 +130,10 @@ def process_book(pred_path: Path, image_dir: Path, output_root: Path,
         img_array = np.array(Image.open(img_path).convert("RGB"))
         stem      = Path(fname).stem
 
-        # Collect detections by class
-        humans        = []
-        polearms      = []
-        illustrations = []
+        # Collect all detections
+        all_humans        = []  # (mask, score, box)
+        all_polearms      = []
+        all_illustrations = []
 
         for det in item["detections"]:
             cls       = IDX_TO_CLASS.get(int(det["prompt"]), str(det["prompt"]))
@@ -139,71 +141,80 @@ def process_book(pred_path: Path, image_dir: Path, output_root: Path,
             boxes     = det.get("boxes", [])
             masks_rle = det.get("masks_rle", [])
 
-            for i, (rle, score, box) in enumerate(zip(masks_rle, scores, boxes)):
-                threshold = POLEARM_MIN_SCORE if cls == "polearm" else min_score
+            threshold = polearm_min_score if cls == "polearm" else min_score
+
+            for rle, score, box in zip(masks_rle, scores, boxes):
                 if score < threshold:
                     continue
-                mask  = decode_rle(rle)
-                entry = (mask, score, box, i)
+                mask = decode_rle(rle)
+                entry = (mask, score, box)
                 if cls == "human":
-                    humans.append(entry)
+                    all_humans.append(entry)
                 elif cls == "polearm":
-                    polearms.append(entry)
+                    all_polearms.append(entry)
                 elif cls == "illustration":
-                    illustrations.append(entry)
+                    all_illustrations.append(entry)
 
-        # Save illustration bbox crops
-        for i, (mask, score, box, idx) in enumerate(illustrations):
-            result = bbox_crop(img_array, box, padding)
-            if result:
-                result.save(str(illus_dir / f"{stem}_il_{i+1}.jpg"))
+        # ── Process each illustration as context boundary ─────────────────
+        for il_idx, (il_mask, il_score, il_box) in enumerate(all_illustrations):
+
+            # Save illustration bbox crop
+            il_result = bbox_crop(img_array, il_box, padding)
+            if il_result:
+                il_result.save(str(illus_dir / f"{stem}_il_{il_idx+1}.jpg"))
                 stats["illustration"] += 1
 
-        def box_center(box):
-            return ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+            # Find humans whose center falls inside this illustration bbox
+            humans_in = [
+                (mask, score, box) for (mask, score, box) in all_humans
+                if center_in_box(box_center(box), il_box)
+            ]
 
-        def box_distance(box1, box2):
-            c1 = box_center(box1)
-            c2 = box_center(box2)
-            return ((c1[0]-c2[0])**2 + (c1[1]-c2[1])**2) ** 0.5
+            # Find polearms whose center falls inside this illustration bbox
+            polearms_in = [
+                (mask, score, box) for (mask, score, box) in all_polearms
+                if center_in_box(box_center(box), il_box)
+            ]
 
-        # Assign each polearm to its nearest human only
-        polearm_assignments = {}  # polearm index -> nearest human index
-        for pi, (p_mask, _, p_box, _) in enumerate(polearms):
-            nearest_human = None
-            nearest_dist  = float('inf')
-            for hi, (h_mask, _, h_box, _) in enumerate(humans):
-                if masks_overlap(h_mask, p_mask, dilation=overlap_dilation) or boxes_near(h_box, p_box, margin=box_margin):
+            if not humans_in:
+                continue
+
+            # ── Assign polearms to nearest human ─────────────────────────
+            # For each polearm find nearest human
+            human_polearm_map = {i: [] for i in range(len(humans_in))}
+
+            for p_mask, p_score, p_box in polearms_in:
+                nearest_hi   = None
+                nearest_dist = float('inf')
+                for hi, (h_mask, h_score, h_box) in enumerate(humans_in):
                     dist = box_distance(h_box, p_box)
                     if dist < nearest_dist:
-                        nearest_dist  = dist
-                        nearest_human = hi
-            if nearest_human is not None:
-                polearm_assignments.setdefault(nearest_human, []).append(pi)
+                        nearest_dist = dist
+                        nearest_hi   = hi
+                if nearest_hi is not None and nearest_dist <= MAX_ASSIGN_DISTANCE:
+                    human_polearm_map[nearest_hi].append((p_mask, p_box))
 
-        # Match humans to polearms via mask overlap OR bbox proximity
-        for i, (h_mask, h_score, h_box, h_idx) in enumerate(humans):
-            assigned = polearm_assignments.get(i, [])
-            overlapping_polearms = [(polearms[pi][0], polearms[pi][2]) for pi in assigned]
-            is_armed = len(overlapping_polearms) > 0
+            # ── Save each human with assigned polearms ────────────────────
+            for hi, (h_mask, h_score, h_box) in enumerate(humans_in):
+                assigned_polearms = human_polearm_map.get(hi, [])
+                is_armed = len(assigned_polearms) > 0
 
-            if is_armed:
-                # Combine human mask with assigned polearm masks only
-                combined_mask = h_mask.copy()
-                for p_mask, _ in overlapping_polearms:
-                    combined_mask = np.maximum(combined_mask, p_mask)
+                if is_armed:
+                    combined_mask = h_mask.copy()
+                    for p_mask, _ in assigned_polearms:
+                        combined_mask = np.maximum(combined_mask, p_mask)
 
-                result = crop_rgba(img_array, combined_mask, padding)
-                if result is None:
-                    continue
-                result.save(str(armed_dir / f"{stem}_hm_armed_{i+1}.png"))
-                stats["armed"] += 1
-            else:
-                result = crop_rgba(img_array, h_mask, padding)
-                if result is None:
-                    continue
-                result.save(str(unarmed_dir / f"{stem}_hm_unarmed_{i+1}.png"))
-                stats["unarmed"] += 1
+                    result = crop_rgba(img_array, combined_mask, padding)
+                    if result is None:
+                        continue
+                    result.save(str(armed_dir / f"{stem}_il{il_idx+1}_hm{hi+1}_armed.png"))
+                    stats["armed"] += 1
+                else:
+                    result = crop_rgba(img_array, h_mask, padding)
+                    if result is None:
+                        continue
+                    result.save(str(unarmed_dir / f"{stem}_il{il_idx+1}_hm{hi+1}_unarmed.png"))
+                    stats["unarmed"] += 1
 
     print(f"  armed={stats['armed']}  unarmed={stats['unarmed']}  "
           f"illustration={stats['illustration']}  skipped={stats['skipped']}")
@@ -211,8 +222,8 @@ def process_book(pred_path: Path, image_dir: Path, output_root: Path,
 
 
 def process_all(predictions_root: str, image_root: str, output_root: str,
-                padding: int, min_score: float, overlap_dilation: int,
-                box_margin: int, book: str = None):
+                padding: int, min_score: float, polearm_min_score: float,
+                book: str = None):
 
     predictions_root = Path(predictions_root)
     image_root       = Path(image_root)
@@ -231,12 +242,11 @@ def process_all(predictions_root: str, image_root: str, output_root: str,
         return
 
     print(f"\n{'='*60}")
-    print(f"Armed Human Extraction")
-    print(f"  Books            : {len(book_folders)}")
-    print(f"  Padding          : {padding}px")
-    print(f"  Min score        : {min_score}")
-    print(f"  Overlap dilation : {overlap_dilation}px")
-    print(f"  Box margin       : {box_margin}px")
+    print(f"Armed Human Extraction (Illustration Context)")
+    print(f"  Books              : {len(book_folders)}")
+    print(f"  Padding            : {padding}px")
+    print(f"  Min score (human)  : {min_score}")
+    print(f"  Min score (polearm): {polearm_min_score}")
     print(f"{'='*60}")
 
     grand = {"armed": 0, "unarmed": 0, "illustration": 0, "skipped": 0}
@@ -254,13 +264,12 @@ def process_all(predictions_root: str, image_root: str, output_root: str,
             continue
 
         stats = process_book(
-            pred_path        = pred_path,
-            image_dir        = image_dir,
-            output_root      = output_root,
-            padding          = padding,
-            min_score        = min_score,
-            overlap_dilation = overlap_dilation,
-            box_margin       = box_margin,
+            pred_path         = pred_path,
+            image_dir         = image_dir,
+            output_root       = output_root,
+            padding           = padding,
+            min_score         = min_score,
+            polearm_min_score = polearm_min_score,
         )
         for k in grand:
             grand[k] += stats[k]
@@ -276,24 +285,21 @@ def process_all(predictions_root: str, image_root: str, output_root: str,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--predictions_root",  required=True)
-    parser.add_argument("--image_root",        required=True)
-    parser.add_argument("--output_root",       required=True)
-    parser.add_argument("--book",              default=None)
-    parser.add_argument("--padding",           type=int,   default=10)
-    parser.add_argument("--min_score",         type=float, default=0.8)
-    parser.add_argument("--overlap_dilation",  type=int,   default=40)
-    parser.add_argument("--box_margin",        type=int,   default=50,
-                        help="Pixels to expand human bbox when checking polearm proximity (default 50)")
+    parser.add_argument("--predictions_root",   required=True)
+    parser.add_argument("--image_root",         required=True)
+    parser.add_argument("--output_root",        required=True)
+    parser.add_argument("--book",               default=None)
+    parser.add_argument("--padding",            type=int,   default=10)
+    parser.add_argument("--min_score",          type=float, default=0.9)
+    parser.add_argument("--polearm_min_score",  type=float, default=0.85)
     args = parser.parse_args()
 
     process_all(
-        predictions_root = args.predictions_root,
-        image_root       = args.image_root,
-        output_root      = args.output_root,
-        padding          = args.padding,
-        min_score        = args.min_score,
-        overlap_dilation = args.overlap_dilation,
-        box_margin       = args.box_margin,
-        book             = args.book,
+        predictions_root  = args.predictions_root,
+        image_root        = args.image_root,
+        output_root       = args.output_root,
+        padding           = args.padding,
+        min_score         = args.min_score,
+        polearm_min_score = args.polearm_min_score,
+        book              = args.book,
     )
