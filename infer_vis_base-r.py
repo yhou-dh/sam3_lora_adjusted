@@ -8,7 +8,7 @@ import numpy as np
 bookname = "test"
 
 BASE_DIR = Path('/home/yumeng.hou/sam3_lora_adjusted')  # ADD HERE
-image_dir = BASE_DIR / f"data/{bookname}/images"
+image_dir = BASE_DIR / f"data/{bookname}"
 base_all_output_dir = BASE_DIR / f"predictions/base/{bookname}"
 
 
