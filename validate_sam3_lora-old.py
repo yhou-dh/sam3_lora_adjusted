@@ -74,20 +74,6 @@ class COCOSegmentDataset(Dataset):
 
         # Load categories
         self.categories = {cat['id']: cat['name'] for cat in self.coco_data['categories']}
-
-        # Optional class filter (e.g. ['illustration', 'human'])
-        self.filter_classes = getattr(self, 'filter_classes', None)
-        if self.filter_classes:
-            self.filter_classes = {c.lower() for c in self.filter_classes}
-            # Build reverse map: name -> id (for filtered classes only)
-            self.filtered_cat_ids = {
-                cat_id for cat_id, name in self.categories.items()
-                if name.lower() in self.filter_classes
-            }
-            print(f"  Filtering to classes: {self.filter_classes} (cat_ids: {self.filtered_cat_ids})")
-        else:
-            self.filtered_cat_ids = None
-
         print(f"Loaded COCO dataset: {split} split")
         print(f"  Images: {len(self.image_ids)}")
         print(f"  Annotations: {len(self.coco_data['annotations'])}")
@@ -101,8 +87,6 @@ class COCOSegmentDataset(Dataset):
             unique_classes = set()
             for ann in annotations:
                 cat_id = ann.get("category_id", 0)
-                if self.filtered_cat_ids and cat_id not in self.filtered_cat_ids:
-                    continue
                 cls_name = self.categories.get(cat_id, "object")
                 unique_classes.add(cls_name.lower())
             self.queries_per_image[idx] = max(1, len(unique_classes))
@@ -137,7 +121,6 @@ class COCOSegmentDataset(Dataset):
 
         objects = []
         object_class_names = []
-        object_category_ids = []
 
         # Scale factors
         scale_w = self.resolution / orig_w
@@ -150,11 +133,9 @@ class COCOSegmentDataset(Dataset):
                 continue
 
             # Get class name from category_id
-            category_id = ann.get("category_id", 0)
-            # Skip if filtering classes and this category is not in the filter
-            if self.filtered_cat_ids and category_id not in self.filtered_cat_ids:
-                continue
+            category_id = ann.get("category_id", 0) 
             class_name = self.categories.get(category_id, "object")
+            object_class_names.append(class_name)
 
             # Convert from COCO [x, y, w, h] to [x1, y1, x2, y2]
             x, y, w, h = bbox_coco
@@ -210,8 +191,6 @@ class COCOSegmentDataset(Dataset):
                 segment=segment
             )
             objects.append(obj)
-            object_class_names.append(class_name)
-            object_category_ids.append(category_id)
 
         image_obj = Image(
             data=image_tensor,
@@ -223,23 +202,10 @@ class COCOSegmentDataset(Dataset):
         # Each query maps to only the objects of that category
         from collections import defaultdict
 
-        # Group object IDs by their class name, track category_id per class
+        # Group object IDs by their class name
         class_to_object_ids = defaultdict(list)
-        class_to_cat_id = {}
-        for obj, class_name, cat_id in zip(objects, object_class_names, object_category_ids):
+        for obj, class_name in zip(objects, object_class_names):
             class_to_object_ids[class_name.lower()].append(obj.object_id)
-            class_to_cat_id[class_name.lower()] = cat_id
-
-        # Store per-image category_id list for GT creation (ordered by query)
-        self._query_cat_ids = getattr(self, '_query_cat_ids', {})
-        self._query_cat_ids[idx] = [class_to_cat_id[cls] for cls in class_to_object_ids]
-
-        # Store object_id -> category_id mapping for GT creation
-        self._img_obj_cat_ids = getattr(self, '_img_obj_cat_ids', {})
-        obj_cat_map = {}
-        for obj, cat_id in zip(objects, object_category_ids):
-            obj_cat_map[obj.object_id] = cat_id
-        self._img_obj_cat_ids[idx] = obj_cat_map
 
         # Create one query per category
         queries = []
@@ -254,7 +220,7 @@ class COCOSegmentDataset(Dataset):
                     inference_metadata=InferenceMetadata(
                         coco_image_id=img_id,
                         original_image_id=img_id,
-                        original_category_id=class_to_cat_id[query_text],
+                        original_category_id=0,
                         original_size=(orig_h, orig_w),
                         object_id=-1,
                         frame_index=-1
@@ -442,7 +408,6 @@ def convert_predictions_to_coco_format(predictions_list, image_ids, resolution=2
         logits = preds['pred_logits']  # [N, 1]
         boxes = preds['pred_boxes']    # [N, 4]
         masks = preds['pred_masks']    # [N, H, W]
-        category_id = preds.get('category_id', 1)
 
         if merge_cracks:
             # Step 1: Filter by score threshold
@@ -506,7 +471,7 @@ def convert_predictions_to_coco_format(predictions_list, image_ids, resolution=2
 
                 pred_dict = {
                     'image_id': int(img_id),
-                    'category_id': category_id,
+                    'category_id': 1,
                     'segmentation': rle,
                     'bbox': [float(x), float(y), float(w), float(h)],
                     'score': float(score),
@@ -535,7 +500,7 @@ def create_coco_gt_from_dataset(dataset, image_ids=None, mask_resolution=288):
         },
         'images': [],
         'annotations': [],
-        'categories': [{'id': cat_id, 'name': name} for cat_id, name in dataset.categories.items()]
+        'categories': [{'id': 1, 'name': 'object'}]
     }
 
     ann_id = 0
@@ -555,22 +520,16 @@ def create_coco_gt_from_dataset(dataset, image_ids=None, mask_resolution=288):
 
         datapoint = dataset[idx]
 
-        # Get category_ids for objects in this image (stored during __getitem__)
-        # Each object maps to the category of its annotation
-        img_cat_ids = getattr(dataset, '_img_obj_cat_ids', {}).get(idx, {})
-
         for obj in datapoint.images[0].objects:
             # Scale boxes to mask_resolution
             box = obj.bbox * mask_resolution
             x1, y1, x2, y2 = box.tolist()
             x, y, w, h = x1, y1, x2-x1, y2-y1
 
-            cat_id = img_cat_ids.get(obj.object_id, 1)
-
             ann = {
                 'id': ann_id,
                 'image_id': int(idx),
-                'category_id': cat_id,
+                'category_id': 1,
                 'bbox': [x, y, w, h],
                 'area': w * h,
                 'iscrowd': 0,
@@ -642,7 +601,6 @@ def convert_predictions_to_coco_format_original_res(predictions_list, image_ids,
         logits = preds['pred_logits']
         boxes = preds['pred_boxes']
         masks = preds['pred_masks']  # [N, 288, 288]
-        category_id = preds.get('category_id', 1)
 
         scores = torch.sigmoid(logits).squeeze(-1)
 
@@ -711,7 +669,7 @@ def convert_predictions_to_coco_format_original_res(predictions_list, image_ids,
 
                 pred_dict = {
                     'image_id': int(img_id),
-                    'category_id': category_id,
+                    'category_id': 1,
                     'segmentation': rle,
                     'bbox': [float(x), float(y), float(w), float(h)],
                     'score': float(score),
@@ -750,7 +708,7 @@ def create_coco_gt_from_dataset_original_res(dataset, image_ids=None, debug=Fals
         },
         'images': [],
         'annotations': [],
-        'categories': [{'id': cat_id, 'name': name} for cat_id, name in dataset.categories.items()]
+        'categories': [{'id': 1, 'name': 'object'}]
     }
 
     ann_id = 0
@@ -769,8 +727,6 @@ def create_coco_gt_from_dataset_original_res(dataset, image_ids=None, debug=Fals
             'is_instance_exhaustive': True
         })
 
-        img_cat_ids = getattr(dataset, '_img_obj_cat_ids', {}).get(idx, {})
-
         for obj in datapoint.images[0].objects:
             # Scale boxes from normalized [0,1] to original size
             box = obj.bbox  # Already in [0,1] normalized coordinates
@@ -787,12 +743,10 @@ def create_coco_gt_from_dataset_original_res(dataset, image_ids=None, debug=Fals
             w = x2_orig - x1_orig
             h = y2_orig - y1_orig
 
-            cat_id = img_cat_ids.get(obj.object_id, 1)
-
             ann = {
                 'id': ann_id,
                 'image_id': int(idx),
-                'category_id': cat_id,
+                'category_id': 1,
                 'bbox': [x, y, w, h],
                 'area': w * h,
                 'iscrowd': 0,
@@ -847,7 +801,7 @@ def move_to_device(obj, device):
 
 def validate(config_path, weights_path, val_data_dir, num_samples=None,
              prob_threshold=0.3, nms_iou=0.7, merge_cracks=False, merge_iou=0.15,
-             use_base_model=False, filter_classes=None):
+             use_base_model=False):
     """Run validation with full metrics (mAP, cgF1) and SAM3 NMS
 
     Args:
@@ -945,7 +899,7 @@ def validate(config_path, weights_path, val_data_dir, num_samples=None,
 
     # Create a simple dataset class that loads from the directory directly
     class DirectCOCODataset(COCOSegmentDataset):
-        def __init__(self, data_dir, filter_classes=None):
+        def __init__(self, data_dir):
             self.data_dir = Path(data_dir)
             self.split_dir = self.data_dir
 
@@ -971,19 +925,6 @@ def validate(config_path, weights_path, val_data_dir, num_samples=None,
 
             # Load categories
             self.categories = {cat['id']: cat['name'] for cat in self.coco_data['categories']}
-
-            # Class filter support
-            self.filter_classes = filter_classes
-            if self.filter_classes:
-                self.filter_classes = {c.lower() for c in self.filter_classes}
-                self.filtered_cat_ids = {
-                    cat_id for cat_id, name in self.categories.items()
-                    if name.lower() in self.filter_classes
-                }
-                print(f"  Filtering to classes: {self.filter_classes} (cat_ids: {self.filtered_cat_ids})")
-            else:
-                self.filtered_cat_ids = None
-
             print(f"Loaded COCO dataset from {data_dir}")
             print(f"  Images: {len(self.image_ids)}")
             print(f"  Annotations: {len(self.coco_data['annotations'])}")
@@ -1005,13 +946,11 @@ def validate(config_path, weights_path, val_data_dir, num_samples=None,
                 unique_classes = set()
                 for ann in annotations:
                     cat_id = ann.get("category_id", 0)
-                    if self.filtered_cat_ids and cat_id not in self.filtered_cat_ids:
-                        continue
                     cls_name = self.categories.get(cat_id, "object")
                     unique_classes.add(cls_name.lower())
                 self.queries_per_image[idx] = max(1, len(unique_classes))
 
-    val_ds = DirectCOCODataset(val_data_dir, filter_classes=filter_classes)
+    val_ds = DirectCOCODataset(val_data_dir)
 
     if num_samples:
         print(f"\n[INFO] Limiting validation to {num_samples} samples for debugging")
@@ -1074,16 +1013,10 @@ def validate(config_path, weights_path, val_data_dir, num_samples=None,
                 # contributes `queries_per_image[dataset_idx]` outputs.
                 physical_bs = min(batch_size, len(val_ds) - batch_idx * batch_size)
                 output_to_image = []
-                output_to_cat_id = []
                 for i in range(physical_bs):
                     dataset_idx = batch_idx * batch_size + i
                     n_queries = val_ds.queries_per_image[dataset_idx]
                     output_to_image.extend([dataset_idx] * n_queries)
-                    # _query_cat_ids[dataset_idx] is populated during __getitem__
-                    cat_ids = val_ds._query_cat_ids.get(dataset_idx, [1] * n_queries)
-                    # Pad/trim to n_queries in case of mismatch
-                    cat_ids = (cat_ids + [1] * n_queries)[:n_queries]
-                    output_to_cat_id.extend(cat_ids)
 
                 assert len(output_to_image) == batch_size_actual, (
                     f"Output-to-image mapping mismatch at batch {batch_idx}: "
@@ -1096,8 +1029,7 @@ def validate(config_path, weights_path, val_data_dir, num_samples=None,
                     all_predictions.append({
                         'pred_logits': final_outputs['pred_logits'][i].detach().cpu(),
                         'pred_boxes':  final_outputs['pred_boxes'][i].detach().cpu(),
-                        'pred_masks':  final_outputs['pred_masks'][i].detach().cpu(),
-                        'category_id': output_to_cat_id[i],
+                        'pred_masks':  final_outputs['pred_masks'][i].detach().cpu()
                     })
 
     print(f"\nCollected predictions for {len(all_predictions)} images")
@@ -1284,13 +1216,6 @@ if __name__ == "__main__":
         default=0.15,
         help="IoU threshold for merging overlapping predictions (default: 0.15, lower = more aggressive)"
     )
-    parser.add_argument(
-        "--classes",
-        type=str,
-        nargs='+',
-        default=None,
-        help="Only evaluate these classes (e.g. --classes illustration human). If not set, all classes are evaluated as a single 'object' category."
-    )
     args = parser.parse_args()
 
     # Validate argument combinations
@@ -1307,6 +1232,5 @@ if __name__ == "__main__":
         nms_iou=args.nms_iou,
         merge_cracks=args.merge,
         merge_iou=args.merge_iou,
-        use_base_model=args.use_base_model,
-        filter_classes=args.classes,
+        use_base_model=args.use_base_model
     )
