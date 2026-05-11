@@ -126,7 +126,7 @@ output_dir.mkdir(parents=True, exist_ok=True)
 for img_path in all_image_paths:
     predictions = inferencer.predict(
         str(img_path),
-        text_prompts=["human", "illustration", "polearm"]
+        text_prompts=["human", "illustration"]
     )
 
     output_path = output_dir / f"{img_path.stem}_multi.png"
