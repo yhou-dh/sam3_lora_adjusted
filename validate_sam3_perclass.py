@@ -1250,9 +1250,9 @@ def validate(config_path, weights_path, val_data_dir, num_samples=None,
         print(f"mAP (IoU 0.50:0.95): {map_bbox:.4f}")
         print(f"mAP@50:              {map50_bbox:.4f}")
         print(f"mAP@75:              {map75_bbox:.4f}")
-        print(f"F1 (IoU 0.50:0.95): {cgf1:.4f}")
-        print(f"F1@50:               {cgf1_50:.4f}")
-        print(f"F1@75:               {cgf1_75:.4f}")
+        print(f"cgf1 (IoU 0.50:0.95): {cgf1:.4f}")
+        print(f"cgf1@50:               {cgf1_50:.4f}")
+        print(f"cgf1@75:               {cgf1_75:.4f}")
         print("="*80)
 
         try:
