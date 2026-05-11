@@ -107,6 +107,28 @@ class COCOSegmentDataset(Dataset):
                 unique_classes.add(cls_name.lower())
             self.queries_per_image[idx] = max(1, len(unique_classes))
 
+        # Pre-compute _query_cat_ids and _img_obj_cat_ids
+        self._query_cat_ids = {}
+        self._img_obj_cat_ids = {}
+        for idx, coco_img_id in enumerate(self.image_ids):
+            annotations = self.img_to_anns.get(coco_img_id, [])
+            obj_idx = 0
+            obj_cat_map = {}
+            class_to_cat_id = {}
+            class_order = []
+            for ann in annotations:
+                cat_id = ann.get("category_id", 0)
+                if self.filtered_cat_ids and cat_id not in self.filtered_cat_ids:
+                    continue
+                cls_name = self.categories.get(cat_id, "object").lower()
+                obj_cat_map[obj_idx] = cat_id
+                if cls_name not in class_to_cat_id:
+                    class_to_cat_id[cls_name] = cat_id
+                    class_order.append(cls_name)
+                obj_idx += 1
+            self._query_cat_ids[idx] = [class_to_cat_id[cls] for cls in class_order]
+            self._img_obj_cat_ids[idx] = obj_cat_map
+
         self.resolution = 1008
         self.transform = v2.Compose([
             v2.ToImage(),
@@ -230,16 +252,10 @@ class COCOSegmentDataset(Dataset):
             class_to_object_ids[class_name.lower()].append(obj.object_id)
             class_to_cat_id[class_name.lower()] = cat_id
 
-        # Store per-image category_id list for GT creation (ordered by query)
-        self._query_cat_ids = getattr(self, '_query_cat_ids', {})
-        self._query_cat_ids[idx] = [class_to_cat_id[cls] for cls in class_to_object_ids]
-
-        # Store object_id -> category_id mapping for GT creation
-        self._img_obj_cat_ids = getattr(self, '_img_obj_cat_ids', {})
+        # Store object_id -> category_id mapping for GT creation (pre-computed in __init__)
         obj_cat_map = {}
         for obj, cat_id in zip(objects, object_category_ids):
             obj_cat_map[obj.object_id] = cat_id
-        self._img_obj_cat_ids[idx] = obj_cat_map
 
         # Create one query per category
         queries = []
@@ -1010,6 +1026,29 @@ def validate(config_path, weights_path, val_data_dir, num_samples=None,
                     cls_name = self.categories.get(cat_id, "object")
                     unique_classes.add(cls_name.lower())
                 self.queries_per_image[idx] = max(1, len(unique_classes))
+
+            # Pre-compute _query_cat_ids and _img_obj_cat_ids so they are
+            # available in the main process (DataLoader workers can't write back)
+            self._query_cat_ids = {}
+            self._img_obj_cat_ids = {}
+            for idx, coco_img_id in enumerate(self.image_ids):
+                annotations = self.img_to_anns.get(coco_img_id, [])
+                obj_idx = 0
+                obj_cat_map = {}
+                class_to_cat_id = {}
+                class_order = []
+                for ann in annotations:
+                    cat_id = ann.get("category_id", 0)
+                    if self.filtered_cat_ids and cat_id not in self.filtered_cat_ids:
+                        continue
+                    cls_name = self.categories.get(cat_id, "object").lower()
+                    obj_cat_map[obj_idx] = cat_id
+                    if cls_name not in class_to_cat_id:
+                        class_to_cat_id[cls_name] = cat_id
+                        class_order.append(cls_name)
+                    obj_idx += 1
+                self._query_cat_ids[idx] = [class_to_cat_id[cls] for cls in class_order]
+                self._img_obj_cat_ids[idx] = obj_cat_map
 
     val_ds = DirectCOCODataset(val_data_dir, filter_classes=filter_classes)
 
