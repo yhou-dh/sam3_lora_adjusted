@@ -206,7 +206,7 @@ class COCOSegmentDataset(Dataset):
             obj = Object(
                 bbox=box_tensor,
                 area=(box_tensor[2]-box_tensor[0])*(box_tensor[3]-box_tensor[1]),
-                object_id=i,
+                object_id=len(objects),  # sequential index in filtered list
                 segment=segment
             )
             objects.append(obj)
