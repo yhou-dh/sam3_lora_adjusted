@@ -26,7 +26,7 @@ def save_book_predictions_summary(inferencer_obj, bookname, all_image_paths, out
     print(f"\nExtracting and saving predictions for book: {bookname}...")
 
     # Define prompts for the summary. Using the multi-prompt set from the cell.
-    current_prompts_for_summary = ["human", "illustration", "polearm or sword", "textblock"]
+    current_prompts_for_summary = ["human", "illustration", "polearm or sword", "vertical Chinese"]
 
     for img_path in all_image_paths:
         image_data = {
@@ -111,7 +111,7 @@ for img_path in all_image_paths:
     # Detect multiple object types at once
     predictions = inferencer.predict(
         str(img_path),
-        text_prompts=["human", "illustration", "polearm or sword", "textblock"]
+        text_prompts=["human", "illustration", "polearm or sword", "vertical Chinese"]
     )
 
     output_path = output_dir / f"{img_path.stem}_multi.png"
