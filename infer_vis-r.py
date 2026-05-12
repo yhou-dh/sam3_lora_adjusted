@@ -78,7 +78,7 @@ try:
     inferencer = SAM3LoRAInference(
         config_path="configs/my_config-lite.yaml", # Paths are now relative to /home/yumeng.hou/sam3_lora_adjusted
         weights_path="outputs/sam3_lora_lite/best_lora_weights.pt", # Paths are now relative to /home/yumeng.hou/sam3_lora_adjusted
-        detection_threshold=0.8,
+        detection_threshold=0.7,
         nms_iou_threshold=0.15 #0.15 / 0.5
     )
 
