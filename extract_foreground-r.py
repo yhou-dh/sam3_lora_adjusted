@@ -63,9 +63,9 @@ def extract_foreground(img_array: np.ndarray, mask: np.ndarray) -> Image.Image:
     return Image.fromarray(cropped, 'RGBA')
 
 
-KEEP_CLASSES = {"human", "illustration"}
-CLASS_NAMES  = {"human": "human", "illustration": "illustration"}
-CLASS_ABBR   = {"human": "hm",    "illustration": "il"}
+KEEP_CLASSES = {"0", "1"}
+CLASS_NAMES  = {"0": "human", "1": "illustration"}
+CLASS_ABBR   = {"0": "hm",    "1": "il"}
 
 def process_book(pred_path: Path, image_dir: Path, output_dir: Path,
                  padding: int, min_score: float, min_detections: int):
