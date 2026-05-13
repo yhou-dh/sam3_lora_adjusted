@@ -208,7 +208,7 @@ python3 evaluate_detections.py \
     --model_name LoRA
 
 python3 evaluate_detections.py \
-    --predictions predictions/base/test/summaries/book_predictions_base.json \
+    --predictions predictions/base/test/summaries/book_predictions.json \
     --annotations data/test/_annotations.coco.json \
     --model_name Base
 ```
@@ -324,7 +324,7 @@ Generate a self-contained HTML gallery from image-text pairs, switchable between
 python3 visualise_pairs.py \
     --pairs pairs/output/image_text_pairs.json \
     --enriched pairs/output/image_text_enriched.json \
-    --image_base predictions/lora \
+    --image_base predictions \
     --output pairs/output/gallery.html
 ```
 

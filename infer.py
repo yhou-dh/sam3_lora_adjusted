@@ -6,7 +6,7 @@ Replaces: infer_vis.py, infer_vmask.py
 
 Modes:
   single  — input is a single book folder (all images inside processed directly)
-  batch   — input is a parent folder; each immediate subfolder is a book
+  batch   — input is a parent folder; each immediate subfolder is a book (expects images/ inside each)
   nested  — input is a root; any leaf subfolder containing images is a book
 
 Outputs per book:
@@ -17,7 +17,7 @@ Outputs per book:
 Usage:
     # Single book folder
     python3 infer.py \
-        --input data/test \
+        --input data/test/images \
         --mode single \
         --predictions_root predictions/lora \
         --config configs/my_config-lite.yaml \
@@ -49,7 +49,7 @@ Usage:
 
     # Base model
     python3 infer.py \
-        --input data/test \
+        --input data/test/images \
         --mode single \
         --predictions_root predictions/base \
         --config configs/base_config.yaml \

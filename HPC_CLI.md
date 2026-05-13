@@ -37,7 +37,7 @@ cd sam3_lora_adjusted
 
 ---
 
-## 1.5 Data Preparation *(as needed)*
+## 2. Data Preparation *(as needed)*
 
 ### Random Data Split *(supplementary)*
 Only needed if you want to randomly shuffle and split raw images before annotation.
@@ -82,9 +82,34 @@ python3 prepare_data.py validate \
 > Note: Train/valid/test splitting into COCO format is handled separately —
 > use Label Studio export directly or the data split scripts in the project root.
 
+### Binarization *(supplementary)*
+
+Only needed if you want to preprocess images with Otsu binarization before training. Not recommended for line-drawing or illustrated manuscripts, as it may destroy subtle ink gradations.
+
+```bash
+cat > binarize.sh << 'EOF'
+#!/bin/bash
+#SBATCH --job-name=binarize
+#SBATCH --partition=voltagepark
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --time=2:00:00
+#SBATCH --output=binarize_%j.out
+
+cd ~/sam3_lora_adjusted
+python3 binarize.py \
+    --input_root data \
+    --output_root data_binary
+EOF
+
+sbatch binarize.sh
+```
+
 ---
 
-## 2. Install Dependencies *(first time only)*
+## 3. Install Dependencies *(first time only)*
 
 ```bash
 cat > fix_torch.sh << 'EOF'
@@ -112,7 +137,7 @@ sbatch fix_torch.sh
 
 ---
 
-## 3. Update Code
+## 4. Update Code
 
 ```bash
 cd ~/sam3_lora_adjusted
@@ -121,7 +146,7 @@ git pull origin main
 
 ---
 
-## 4. Training
+## 5. Training
 
 ```bash
 cat > train.sh << 'EOF'
@@ -146,12 +171,9 @@ sbatch train.sh
 
 ---
 
-## 5. Validation
+## 6. Validation
 
-### 5.1 Validation per class
-
-
-#5.1 Validation per class
+### 6.1 Validation per class
 
 ```bash
 # LoRA on valid
@@ -240,7 +262,7 @@ sbatch validate_base_test.sh
 ```
 
 
-#5.2 Validation (by looking at selected classess without differenting them)
+### 6.2 Validation (combined classes)
 
 ```bash
 # LoRA on valid
@@ -333,12 +355,12 @@ sbatch validate_base_test.sh
 
 ---
 
-## 6. Inference
+## 7. Inference
 
 > `infer.py` is the unified inference script replacing `infer_vis.py`, `infer_vis_base.py`, `infer_vis2.py`, and `infer_vmask.py`.
 > Use `--mode` to control folder traversal and `--masks` to save RLE masks.
 
-### 6.1 Single book (LoRA or Base)
+### 7.1 Single book (LoRA or Base)
 
 ```bash
 # LoRA inference
@@ -357,7 +379,7 @@ cat > infer_lora.sh << 'EOF'
 export HF_TOKEN="hf_token"
 cd ~/sam3_lora_adjusted
 python3.10 infer.py \
-    --input data/test \
+    --input data/test/images \
     --mode single \
     --predictions_root predictions/lora \
     --config configs/my_config-lite.yaml \
@@ -382,7 +404,7 @@ cat > infer_base.sh << 'EOF'
 export HF_TOKEN="hf_token"
 cd ~/sam3_lora_adjusted
 python3.10 infer.py \
-    --input data/test \
+    --input data/test/images \
     --mode single \
     --predictions_root predictions/base \
     --config configs/base_config.yaml \
@@ -401,7 +423,7 @@ find ~/sam3_lora_adjusted/predictions/ -name "*.png" | wc -l
 watch -n 10 "find ~/sam3_lora_adjusted/predictions/ -name '*.png' | wc -l"
 ```
 
-### 6.2 All immediate subfolders (batch, boxes only)
+### 7.2 All immediate subfolders (batch, boxes only)
 
 ```bash
 cat > infer_lora2.sh << 'EOF'
@@ -431,7 +453,7 @@ EOF
 sbatch infer_lora2.sh
 ```
 
-### 6.3 All books with RLE masks (needed for segmentation/pairing)
+### 7.3 All books with RLE masks (needed for segmentation/pairing)
 
 ```bash
 cat > infer_masks.sh << 'EOF'
@@ -462,9 +484,9 @@ EOF
 sbatch infer_masks.sh
 ```
 
-## 7 Segmentation
+## 8. Segmentation
 
-### 7.1 Segment by mask
+### 8.1 Segment by mask
 
 ```bash
 cat > extract_fg.sh << 'EOF'
@@ -490,7 +512,7 @@ EOF
 sbatch extract_fg.sh
 ```
 
-### 7.2 Segment by bbox
+### 8.2 Segment by bbox
 
 ```bash
 cat > extract_bbox.sh << 'EOF'
@@ -516,7 +538,7 @@ EOF
 sbatch extract_bbox.sh
 ```
 
-### 7.3 Armed human extraction
+### 8.3 Armed human extraction
 
 Extracts armed vs unarmed humans by detecting overlap between human and polearm masks.
 
@@ -548,55 +570,33 @@ sbatch extract_armed.sh
 
 Outputs go to `predictions/armed/<book>/human_armed/`, `human_unarmed/`, `illustration_bbox/`.
 
-### 7.4 Binarization
+---
 
-Applies Otsu binarization to all images in nested subfolders, saving to a mirrored output directory.
-
-```bash
-cat > binarize.sh << 'EOF'
-#!/bin/bash
-#SBATCH --job-name=binarize
-#SBATCH --partition=voltagepark
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
-#SBATCH --time=2:00:00
-#SBATCH --output=binarize_%j.out
-
-cd ~/sam3_lora_adjusted
-python3 binarize.py \
-    --input_root data \
-    --output_root data_binary
-EOF
-
-sbatch binarize.sh
-```
-
-## 8. Upload Results to HuggingFace
+## 9. Upload Results to HuggingFace
 
 ```bash
 cd ~/sam3_lora_adjusted
 
 # Verify JSONs exist first
-find ~/sam3_lora_adjusted -name "book_predictions.json"
-find ~/sam3_lora_adjusted -name "book_predictions_base.json"
+find . -name "book_predictions.json"
 
-# Zip and upload predictions
+# Zip results
 zip -r predictions.zip predictions/
 zip -r validation_logs.zip validate_*.out
 zip -r outputs.zip outputs/
 
+# Upload zips
 python3 -c "
 from huggingface_hub import HfApi
-api = HfApi(token='hf_token')
+import os
+api = HfApi(token=os.environ['HF_TOKEN'])
 for f, name in [
     ('predictions.zip',     'predictions.zip'),
     ('validation_logs.zip', 'validation_logs.zip'),
     ('outputs.zip',         'outputs.zip'),
 ]:
     api.upload_file(
-        path_or_fileobj='/home/yumeng.hou/sam3_lora_adjusted/' + f,
+        path_or_fileobj=f,
         path_in_repo=name,
         repo_id='yhlela/lora_ma',
         repo_type='dataset'
@@ -604,19 +604,20 @@ for f, name in [
     print(f'Uploaded {f}')
 "
 
-# Upload specific JSON files only
+# Upload specific prediction JSONs
 python3 -c "
 from huggingface_hub import HfApi
-api = HfApi(token='hf_token')
+import os
+api = HfApi(token=os.environ['HF_TOKEN'])
 api.upload_file(
-    path_or_fileobj='/home/yumeng.hou/sam3_lora_adjusted/predictions/lora/test/summaries/book_predictions.json',
+    path_or_fileobj='predictions/lora/test/summaries/book_predictions.json',
     path_in_repo='predictions/lora/book_predictions.json',
     repo_id='yhlela/lora_ma',
     repo_type='dataset'
 )
 api.upload_file(
-    path_or_fileobj='/home/yumeng.hou/sam3_lora_adjusted/predictions/base/test/summaries/book_predictions_base.json',
-    path_in_repo='predictions/base/book_predictions_base.json',
+    path_or_fileobj='predictions/base/test/summaries/book_predictions.json',
+    path_in_repo='predictions/base/book_predictions.json',
     repo_id='yhlela/lora_ma',
     repo_type='dataset'
 )
@@ -626,7 +627,7 @@ print('Done!')
 
 ---
 
-## 9. Post-Evaluation
+## 10. Post-Evaluation
 
 ```bash
 cat > eval.sh << 'EOF'
@@ -649,7 +650,7 @@ python3.10 evaluate_detections.py \
     --model_name LoRA
 
 python3.10 evaluate_detections.py \
-    --predictions predictions/base/test/summaries/book_predictions_base.json \
+    --predictions predictions/base/test/summaries/book_predictions.json \
     --annotations data/test/_annotations.coco.json \
     --model_name Base
 EOF
@@ -659,7 +660,7 @@ sbatch eval.sh
 
 ---
 
-## 10. Threshold Sweep
+## 11. Threshold Sweep
 
 ```bash
 cat > sweep.sh << 'EOF'
@@ -682,7 +683,7 @@ python3.10 threshold_sweep.py \
     --model_name LoRA
 
 python3.10 threshold_sweep.py \
-    --predictions predictions/base/test/summaries/book_predictions_base.json \
+    --predictions predictions/base/test/summaries/book_predictions.json \
     --annotations data/test/_annotations.coco.json \
     --model_name Base
 EOF
@@ -692,26 +693,42 @@ sbatch sweep.sh
 
 ---
 
-## 11. Post-Training Diagnostics
+## 12. Post-Training Diagnostics
 
 ### Loss diagnostics
 ```bash
-# Standalone diagnostic script — prints loss weight analysis to stdout
+# Standalone diagnostic — run directly on login node (no GPU needed)
 python3 analyze_loss.py
 ```
 
 ### Compare LoRA vs Base (batch)
 ```bash
-python3 compare_lora_base_batch.py \
+cat > compare.sh << 'EOF'
+#!/bin/bash
+#SBATCH --job-name=compare
+#SBATCH --partition=voltagepark
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --time=0:30:00
+#SBATCH --output=compare_%j.out
+
+cd ~/sam3_lora_adjusted
+python3.10 compare_lora_base_batch.py \
     --lora_predictions predictions/lora/test/summaries/book_predictions.json \
-    --base_predictions predictions/base/test/summaries/book_predictions_base.json \
+    --base_predictions predictions/base/test/summaries/book_predictions.json \
     --annotations data/test/_annotations.coco.json \
     --output_dir outputs/comparison/
+EOF
+
+sbatch compare.sh
 ```
 
 ---
 
-## 12. Image-Text Data Pairing *(supplementary)*
+## 13. Image-Text Data Pairing *(supplementary)*
 
 Pair segmented illustration crops with text and metadata from CSV files.
 
