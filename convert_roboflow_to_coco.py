@@ -108,15 +108,21 @@ def convert_roboflow_to_coco(data_dir: str, output_file: str = "_annotations.coc
 
 
 if __name__ == "__main__":
-    import sys
+    import argparse
 
-    # Convert train, valid, and test sets
-    for split in ['train', 'valid', 'test']:
-        data_dir = f'/workspace/sam3_lora/data/{split}'
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data_root", default="data",
+                        help="Root folder containing train/valid/test subfolders (default: data)")
+    parser.add_argument("--splits", nargs="+", default=["train", "valid", "test"],
+                        help="Which splits to convert (default: train valid test)")
+    args = parser.parse_args()
+
+    for split in args.splits:
+        data_dir = os.path.join(args.data_root, split)
         if os.path.exists(data_dir):
             print(f"\n{'='*50}")
             print(f"Converting {split} set...")
             print(f"{'='*50}")
             convert_roboflow_to_coco(data_dir)
         else:
-            print(f"\nSkipping {split} (directory not found)")
+            print(f"\nSkipping {split} (directory not found: {data_dir})")

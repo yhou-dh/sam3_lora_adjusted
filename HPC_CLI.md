@@ -1,4 +1,5 @@
-# HPC Command Reference — SAM3 LoRA
+# MILens — HPC Command Reference
+Manuscript Illustration Lens
 
 ---
 
@@ -33,6 +34,53 @@ cd ~
 git clone https://github.com/YHou-DH/sam3_lora_adjusted.git
 cd sam3_lora_adjusted
 ```
+
+---
+
+## 1.5 Data Preparation *(as needed)*
+
+### Random Data Split *(supplementary)*
+Only needed if you want to randomly shuffle and split raw images before annotation.
+
+```bash
+python3 split_data.py \
+    --source data/all_images \
+    --output data \
+    --train 0.8 --valid 0.1 --test 0.1 \
+    --seed 42
+```
+
+### Convert Roboflow results to COCO format
+```bash
+python3 convert_roboflow_to_coco.py \
+    --data_root data \
+    --splits train valid test
+```
+
+### Convert COCO or YOLO annotations to SAM3 format
+```bash
+# From COCO JSON
+python3 prepare_data.py coco \
+    --coco_json data/train/_annotations.coco.json \
+    --images_dir data/train \
+    --output_dir data/ \
+    --split train
+
+# From YOLO
+python3 prepare_data.py yolo \
+    --yolo_dir data/ \
+    --output_dir data/ \
+    --classes human illustration polearm \
+    --split train
+
+# Validate a split
+python3 prepare_data.py validate \
+    --data_dir data/ \
+    --split train
+```
+
+> Note: Train/valid/test splitting into COCO format is handled separately —
+> use Label Studio export directly or the data split scripts in the project root.
 
 ---
 
@@ -287,8 +335,13 @@ sbatch validate_base_test.sh
 
 ## 6. Inference
 
+> `infer.py` is the unified inference script replacing `infer_vis.py`, `infer_vis_base.py`, `infer_vis2.py`, and `infer_vmask.py`.
+> Use `--mode` to control folder traversal and `--masks` to save RLE masks.
+
+### 6.1 Single book (LoRA or Base)
+
 ```bash
-# LoRA inference (test set)
+# LoRA inference
 cat > infer_lora.sh << 'EOF'
 #!/bin/bash
 #SBATCH --job-name=infer_lora
@@ -303,10 +356,17 @@ cat > infer_lora.sh << 'EOF'
 
 export HF_TOKEN="hf_token"
 cd ~/sam3_lora_adjusted
-python3.10 infer_vis.py
+python3.10 infer.py \
+    --input data/test \
+    --mode single \
+    --predictions_root predictions/lora \
+    --config configs/my_config-lite.yaml \
+    --weights outputs/sam3_lora_lite/best_lora_weights.pt \
+    --prompts human illustration polearm \
+    --masks
 EOF
 
-# Base inference (test set)
+# Base inference
 cat > infer_base.sh << 'EOF'
 #!/bin/bash
 #SBATCH --job-name=infer_base
@@ -321,10 +381,29 @@ cat > infer_base.sh << 'EOF'
 
 export HF_TOKEN="hf_token"
 cd ~/sam3_lora_adjusted
-python3.10 infer_vis_base.py
+python3.10 infer.py \
+    --input data/test \
+    --mode single \
+    --predictions_root predictions/base \
+    --config configs/base_config.yaml \
+    --weights base \
+    --prompts human illustration polearm \
+    --masks
 EOF
 
-# LoRA inference (all books in finerbook/)
+sbatch infer_lora.sh
+sbatch infer_base.sh
+```
+
+Check progress:
+```bash
+find ~/sam3_lora_adjusted/predictions/ -name "*.png" | wc -l
+watch -n 10 "find ~/sam3_lora_adjusted/predictions/ -name '*.png' | wc -l"
+```
+
+### 6.2 All immediate subfolders (batch, boxes only)
+
+```bash
 cat > infer_lora2.sh << 'EOF'
 #!/bin/bash
 #SBATCH --job-name=infer_lora2
@@ -339,30 +418,25 @@ cat > infer_lora2.sh << 'EOF'
 
 export HF_TOKEN="hf_token"
 cd ~/sam3_lora_adjusted
-python3.10 infer_vis2.py
+python3.10 infer.py \
+    --input data \
+    --mode batch \
+    --predictions_root predictions/lora \
+    --config configs/my_config-lite.yaml \
+    --weights outputs/sam3_lora_lite/best_lora_weights.pt \
+    --prompts human illustration polearm \
+    --skip_done
 EOF
 
-sbatch infer_lora.sh
-sbatch infer_base.sh
 sbatch infer_lora2.sh
 ```
 
-Check progress:
-```bash
-find ~/sam3_lora_adjusted/predictions/ -name "*.png" | wc -l
-
-# Auto-refresh every 10 seconds
-watch -n 10 "find ~/sam3_lora_adjusted/predictions/ -name '*.png' | wc -l"
-```
-
----
-
-### 6.1 Batch inference:
+### 6.3 All books with RLE masks (needed for segmentation/pairing)
 
 ```bash
-cat > infer_lora2.sh << 'EOF'
+cat > infer_masks.sh << 'EOF'
 #!/bin/bash
-#SBATCH --job-name=infer_lora2
+#SBATCH --job-name=infer_masks
 #SBATCH --partition=voltagepark
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -370,44 +444,30 @@ cat > infer_lora2.sh << 'EOF'
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
 #SBATCH --time=4:00:00
-#SBATCH --output=infer_lora2_%j.out
+#SBATCH --output=infer_masks_%j.out
 
-export HF_TOKEN="your_token_here"
+export HF_TOKEN="hf_token"
 cd ~/sam3_lora_adjusted
-python3.10 infer_vis2.py
+python3.10 infer.py \
+    --input finerbook \
+    --mode nested \
+    --predictions_root predictions/lora \
+    --config configs/my_config-lite.yaml \
+    --weights outputs/sam3_lora_lite/best_lora_weights.pt \
+    --prompts human illustration polearm \
+    --masks \
+    --skip_done
 EOF
 
-sbatch infer_lora2.sh
-```
-
-
-### 6.2 Batch inference with mask:
-
-```bash
-cat > infer_vmask.sh << 'EOF'
-#!/bin/bash
-#SBATCH --job-name=infer_vmask
-#SBATCH --partition=voltagepark
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=64G
-#SBATCH --time=4:00:00
-#SBATCH --output=infer_vmask_%j.out
-
-cd ~/sam3_lora_adjusted
-python3.10 infer_vmask.py
-EOF
-
-sbatch infer_vmask.sh
+sbatch infer_masks.sh
 ```
 
 ## 7 Segmentation
 
 ### 7.1 Segment by mask
 
-cat > extract.sh << 'EOF'
+```bash
+cat > extract_fg.sh << 'EOF'
 #!/bin/bash
 #SBATCH --job-name=extract_fg
 #SBATCH --partition=voltagepark
@@ -416,24 +476,104 @@ cat > extract.sh << 'EOF'
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
 #SBATCH --time=2:00:00
-#SBATCH --output=extract_%j.out
+#SBATCH --output=extract_fg_%j.out
 
 cd ~/sam3_lora_adjusted
 
 python3.10 extract_foreground.py \
     --predictions_root predictions/lora \
-    --image_root finerbook \
+    --image_root data \
     --padding 10 \
     --min_score 0.9
 EOF
 
-sbatch extract.sh
-
+sbatch extract_fg.sh
+```
 
 ### 7.2 Segment by bbox
 
+```bash
+cat > extract_bbox.sh << 'EOF'
+#!/bin/bash
+#SBATCH --job-name=extract_bbox
+#SBATCH --partition=voltagepark
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=64G
+#SBATCH --time=2:00:00
+#SBATCH --output=extract_bbox_%j.out
 
-## 7. Upload Results to HuggingFace
+cd ~/sam3_lora_adjusted
+
+python3.10 extract_bbox.py \
+    --predictions_root predictions/lora \
+    --image_root data \
+    --padding 10 \
+    --min_score 0.9
+EOF
+
+sbatch extract_bbox.sh
+```
+
+### 7.3 Armed human extraction
+
+Extracts armed vs unarmed humans by detecting overlap between human and polearm masks.
+
+```bash
+cat > extract_armed.sh << 'EOF'
+#!/bin/bash
+#SBATCH --job-name=extract_armed
+#SBATCH --partition=voltagepark
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=64G
+#SBATCH --time=2:00:00
+#SBATCH --output=extract_armed_%j.out
+
+cd ~/sam3_lora_adjusted
+
+python3.10 extract_armed.py \
+    --predictions_root predictions/lora \
+    --image_root data \
+    --output_root predictions/armed \
+    --padding 10 \
+    --min_score 0.8 \
+    --overlap_dilation 20
+EOF
+
+sbatch extract_armed.sh
+```
+
+Outputs go to `predictions/armed/<book>/human_armed/`, `human_unarmed/`, `illustration_bbox/`.
+
+### 7.4 Binarization
+
+Applies Otsu binarization to all images in nested subfolders, saving to a mirrored output directory.
+
+```bash
+cat > binarize.sh << 'EOF'
+#!/bin/bash
+#SBATCH --job-name=binarize
+#SBATCH --partition=voltagepark
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --time=2:00:00
+#SBATCH --output=binarize_%j.out
+
+cd ~/sam3_lora_adjusted
+python3 binarize.py \
+    --input_root data \
+    --output_root data_binary
+EOF
+
+sbatch binarize.sh
+```
+
+## 8. Upload Results to HuggingFace
 
 ```bash
 cd ~/sam3_lora_adjusted
@@ -486,7 +626,7 @@ print('Done!')
 
 ---
 
-## 8. Evaluation
+## 9. Post-Evaluation
 
 ```bash
 cat > eval.sh << 'EOF'
@@ -519,7 +659,7 @@ sbatch eval.sh
 
 ---
 
-## 9. Threshold Sweep
+## 10. Threshold Sweep
 
 ```bash
 cat > sweep.sh << 'EOF'
@@ -552,6 +692,55 @@ sbatch sweep.sh
 
 ---
 
+## 11. Post-Training Diagnostics
+
+### Loss diagnostics
+```bash
+# Standalone diagnostic script — prints loss weight analysis to stdout
+python3 analyze_loss.py
+```
+
+### Compare LoRA vs Base (batch)
+```bash
+python3 compare_lora_base_batch.py \
+    --lora_predictions predictions/lora/test/summaries/book_predictions.json \
+    --base_predictions predictions/base/test/summaries/book_predictions_base.json \
+    --annotations data/test/_annotations.coco.json \
+    --output_dir outputs/comparison/
+```
+
+---
+
+## 12. Image-Text Data Pairing *(supplementary)*
+
+Pair segmented illustration crops with text and metadata from CSV files.
+
+```bash
+cat > pair_data.sh << 'EOF'
+#!/bin/bash
+#SBATCH --job-name=pair_data
+#SBATCH --partition=voltagepark
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=16G
+#SBATCH --time=0:30:00
+#SBATCH --output=pair_data_%j.out
+
+cd ~/sam3_lora_adjusted
+python3 pair_data.py \
+    --csv_dir pairs/csv \
+    --predictions_root predictions/lora \
+    --extraction_type mask \
+    --output_dir pairs/output \
+    --mode both
+EOF
+
+sbatch pair_data.sh
+```
+
+---
+
 ## Key Rules
 
 | Rule | Detail |
@@ -563,3 +752,5 @@ sbatch sweep.sh
 | Working directory | `~/sam3_lora_adjusted` |
 | Git branch | `main` |
 | Always set HF_TOKEN | In every SLURM job |
+| Unified inference | `infer.py --mode single/batch/nested` |
+| Masks for extraction/pairing | Always add `--masks` to `infer.py` |
