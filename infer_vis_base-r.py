@@ -78,7 +78,7 @@ try:
     base_inferencer_full = SAM3LoRAInference(
         config_path="configs/base_config.yaml",
         weights_path='base',
-        detection_threshold=0.7,
+        detection_threshold=0.8,
         nms_iou_threshold=0.15
     )
 finally:

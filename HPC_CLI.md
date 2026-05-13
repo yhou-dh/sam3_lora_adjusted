@@ -100,6 +100,100 @@ sbatch train.sh
 
 ## 5. Validation
 
+### 5.1 Validation per class
+
+
+#5.1 Validation per class
+
+```bash
+# LoRA on valid
+cat > validate_lora_valid.sh << 'EOF'
+#!/bin/bash
+#SBATCH --job-name=sam3_validate
+#SBATCH --partition=voltagepark
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=128G
+#SBATCH --time=1:00:00
+#SBATCH --output=validate_%j.out
+export HF_TOKEN="yuor token here"
+cd ~/sam3_lora_adjusted
+/usr/bin/python3 validate_sam3_perclass.py \
+  --config configs/my_config-lite.yaml \
+  --weights outputs/sam3_lora_lite/best_lora_weights.pt \
+  --val_data_dir data/valid \
+  --classes illustration human polearm
+EOF
+# LoRA on test
+cat > validate_lora_test.sh << 'EOF'
+#!/bin/bash
+#SBATCH --job-name=sam3_test
+#SBATCH --partition=voltagepark
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=128G
+#SBATCH --time=1:00:00
+#SBATCH --output=validate_test_%j.out
+export HF_TOKEN="yuor token here"
+cd ~/sam3_lora_adjusted
+/usr/bin/python3 validate_sam3_perclass.py \
+  --config configs/my_config-lite.yaml \
+  --weights outputs/sam3_lora_lite/best_lora_weights.pt \
+  --val_data_dir data/test \
+  --classes illustration human polearm
+EOF
+# Base on valid
+cat > validate_base_valid.sh << 'EOF'
+#!/bin/bash
+#SBATCH --job-name=base_valid
+#SBATCH --partition=voltagepark
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=128G
+#SBATCH --time=1:00:00
+#SBATCH --output=validate_base_valid_%j.out
+export HF_TOKEN="yuor token here"
+cd ~/sam3_lora_adjusted
+/usr/bin/python3 validate_sam3_perclass.py \
+  --val_data_dir data/valid \
+  --use-base-model \
+  --classes illustration human polearm
+EOF
+# Base on test
+cat > validate_base_test.sh << 'EOF'
+#!/bin/bash
+#SBATCH --job-name=base_test
+#SBATCH --partition=voltagepark
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=128G
+#SBATCH --time=1:00:00
+#SBATCH --output=validate_base_test_%j.out
+export HF_TOKEN="yuor token here"
+cd ~/sam3_lora_adjusted
+/usr/bin/python3 validate_sam3_perclass.py \
+  --val_data_dir data/test \
+  --use-base-model \
+  --classes illustration human polearm
+EOF
+sbatch validate_lora_valid.sh
+sbatch validate_lora_test.sh
+sbatch validate_base_valid.sh
+sbatch validate_base_test.sh
+
+```
+
+
+#5.2 Validation (by looking at selected classess without differenting them)
+
 ```bash
 # LoRA on valid
 cat > validate.sh << 'EOF'
@@ -264,6 +358,7 @@ watch -n 10 "find ~/sam3_lora_adjusted/predictions/ -name '*.png' | wc -l"
 ---
 
 ### 6.1 Batch inference:
+
 ```bash
 cat > infer_lora2.sh << 'EOF'
 #!/bin/bash
@@ -288,7 +383,7 @@ sbatch infer_lora2.sh
 
 ### 6.2 Batch inference with mask:
 
-
+```bash
 cat > infer_vmask.sh << 'EOF'
 #!/bin/bash
 #SBATCH --job-name=infer_vmask
@@ -306,9 +401,11 @@ python3.10 infer_vmask.py
 EOF
 
 sbatch infer_vmask.sh
+```
 
+## 7 Segmentation
 
-### 6.3 Segment by mask
+### 7.1 Segment by mask
 
 cat > extract.sh << 'EOF'
 #!/bin/bash
@@ -332,7 +429,9 @@ EOF
 
 sbatch extract.sh
 
----
+
+### 7.2 Segment by bbox
+
 
 ## 7. Upload Results to HuggingFace
 
